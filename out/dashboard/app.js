@@ -66,13 +66,16 @@
   }
   function farmSteps(r) {
     var chain = chainOf(r), cap = capitalFor(r), hold = holdFor(r.age_days), gas = cap >= 150 ? 8 : 4;
+    var agePart = r.age_days == null ? 'with no listing date in the snapshot' : r.age_days + ' days with no token';
+    var chainPart = !r.chains || !r.chains.length ? 'no chain the snapshot lists' : r.chains.length === 1 ? '1 chain' : r.chains.length + ' chains';
     return [
       { t: 'Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', c: 'under $3 of gas for the first transaction', m: '5 minutes' },
       { t: actionFor(r, cap, chain), c: '$' + cap + ' of capital and about $' + gas + ' of gas', m: '15 minutes to set up' },
       { t: 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.', c: 'about $2 of gas a week', m: '10 minutes a week' },
       { t: 'Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', c: 'the $' + cap + ' stays in the position', m: hold + ' days' },
       { t: 'Before you withdraw, open the protocol\'s own points or rewards page and claim only from the link it publishes.', c: 'no fee to check, and never pay to claim', m: '10 minutes' },
-      { t: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', c: 'nothing but the log', m: '5 minutes' }
+      { t: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', c: 'nothing but the log', m: '5 minutes' },
+      { t: 'Recheck this board after ' + hold + ' days: ' + r.name + ' has run ' + agePart + ' across ' + chainPart + ', and a token — if one ever comes — is this board\'s own claim, never a promise.', c: 'nothing but the check', m: '5 minutes' }
     ];
   }
 
@@ -150,10 +153,12 @@
   function renderStats() {
     var top = D.rows[0];
     var pre = D.rows.filter(function (r) { return r.risk_tier === 'HIGH'; }).length;
+    var total = D.rows.reduce(function (a, r) { return a + r.implied_value_usd; }, 0);
     document.getElementById('stats').innerHTML =
       '<div class="stat"><b>' + D.board_size + '</b><span>protocols ranked</span></div>' +
       '<div class="stat"><b>' + D.watchlist_size + '</b><span>on the watchlist</span></div>' +
       '<div class="stat"><b>' + fmtUsd(top.implied_value_usd) + '</b><span>top implied value — ' + esc(top.name) + '</span></div>' +
+      '<div class="stat"><b>' + fmtUsd(total) + '</b><span>total implied value</span></div>' +
       '<div class="stat"><b>' + pre + '</b><span>rows marked HIGH risk</span></div>';
   }
   function renderCats() {
@@ -185,6 +190,14 @@
       '<p>Growth is the 7-day TVL change, clamped to −60%…+120%. Maturity runs 0.6 for a brand-new protocol to 1.0 ' +
       'at three years, so a long track record with no token counts for more. The chain factor adds 2% per extra ' +
       'chain, up to 10%. Age unknown counts as one year.</p>' +
+      '<p>Risk-adjusted value is the implied value discounted for the row\'s own risk: ' +
+      '<code>risk-adjusted = implied × (1 − 0.5 × risk score)</code>, where the risk score is the row\'s risk ' +
+      'points out of 6. It never changes the ranking — the board is always ranked by implied value — but it ' +
+      'prices a row\'s risk into the number, so a high-implied, high-risk row does not read the same as a ' +
+      'high-implied, low-risk one. Each detail view shows both numbers.</p>' +
+      '<p>Coverage: the board ranks every rankable pre-token protocol in the snapshot — the 40-protocol watchlist ' +
+      'plus all 186 rankable protocols below the watchlist floor, 226 rows in all, with no top-N cut. ' +
+      '53 pre-token records are not ranked: 42 exchanges and 11 versioned pools of another protocol.</p>' +
       '<p>Risk is scored from the same figures: a sharp 7-day move, a listing under a year old or an ' +
       'unknown listing date, TVL under $100M, a single chain, and a volatile sector each add a point. LOW is 0–2 points, MEDIUM 3–4, HIGH 5–6. ' +
       'The reasons are printed on every row\'s detail view.</p>' +
@@ -295,6 +308,7 @@
       '<div class="detail-grid"><div>' +
       '<p class="big">' + fmtFull(r.implied_value_usd) + '</p>' +
       '<p style="margin:0 0 12px;color:var(--muted);font-size:13px">implied launch value under model ' + esc(D.model_version) + '</p>' +
+      '<p class="adjline">Risk-adjusted: <b>' + fmtFull(r.risk_adjusted_value_usd) + '</b> — the implied value discounted for this row\'s risk score, so a risky row reads lower than a steady one at the same implied value.</p>' +
       '<dl class="kv">' +
       '<dt>TVL</dt><dd>' + fmtFull(r.tvl_usd) + '</dd>' +
       '<dt>7-day change</dt><dd class="' + pctCls(r.change_7d) + '">' + fmtPct(r.change_7d) + '</dd>' +
@@ -309,7 +323,7 @@
       ' × ' + r.maturity_multiplier.toFixed(2) + ' × ' + r.chain_multiplier.toFixed(2) + ' = ' + fmtUsd(r.implied_value_usd) + '</p>' +
       '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">TVL × sector multiple × growth × maturity × chain factor. ' +
       'Each factor comes from this protocol\'s own snapshot record.</p>' +
-      '<h3>Farm plan — six steps</h3><ol class="steps">' +
+      '<h3>Farm plan — seven steps</h3><ol class="steps">' +
       steps.map(function (s) {
         return '<li>' + esc(s.t) + '<span class="meta2">Cost: ' + esc(s.c) + ' · Time: ' + esc(s.m) + '</span></li>';
       }).join('') + '</ol>' +

@@ -1,10 +1,13 @@
-// Token Launch Radar — value model, radar-2.
+// Token Launch Radar — value model, radar-3.
 //
-// One sealed DefiLlama snapshot in, one ranked board out. The board covers every slug in the
-// snapshot's watchlist (the floor, never a ceiling) and adds the early radar: pre-token protocols
-// below the watchlist floor, found by TVL. A protocol is pre-token when its snapshot entry records
-// no token at all (no market cap, no CoinGecko id, no symbol). Live-token protocols are kept apart
-// and shown with the market's own values, never mixed into the ranked board.
+// One sealed DefiLlama snapshot in, one ranked board out. The board covers every rankable
+// pre-token protocol in the snapshot: the watchlist (the floor, never a ceiling) plus every
+// rankable protocol below the watchlist floor, so the radar's tail is the whole findable
+// universe, not a top-N cut. A protocol is pre-token when its snapshot entry records no token
+// at all (no market cap, no CoinGecko id, no symbol). Live-token protocols are kept apart
+// and shown with the market's own values, never mixed into the ranked board. Pre-token
+// records that are not ranked at all are exchanges (a CEX is not a launch to farm) and
+// versioned pools of another protocol (a name ending in a release marker).
 //
 // Implied value follows only from the snapshot's own figures — TVL, seven-day growth, age with no
 // token, category, and chain count. No protocol name is ever special-cased: the same function
@@ -16,6 +19,13 @@
 //   maturity    = 0.6 + min(age_days, 1095) / 1095 x 0.4   (age unknown: 365 days)
 //   chainMult   = 1 + 0.02 x min(chains - 1, 5)            (multi-chain durability)
 //   implied     = max(1, round(base x growthMult x maturity x chainMult))
+//   riskAdjusted = max(1, round(implied x (1 - 0.5 x riskScore)))
+//
+// The risk-adjusted value is the same implied value discounted for the row's own risk score
+// (riskScore = risk points / 6, so 0 for a clean row and 1 for a row that scores every point).
+// It never changes the ranking — the board is always ranked by implied value — but it tells
+// a reader what the launch is worth once the row's risk is priced in, so a high-implied,
+// high-risk row does not read the same as a high-implied, low-risk one.
 //
 // Why a category multiple instead of one flat number: sectors trade at different value per dollar
 // of TVL. A risk curator or RWA vault and a plain chain do not command the same future token
@@ -78,10 +88,10 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-2';
+export const MODEL_VERSION = 'radar-3';
 
-/** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
-export const EARLY_ROWS = 160;
+/** The risk discount on the risk-adjusted value: half the row's risk score, at most half the value. */
+export const RISK_DISCOUNT = 0.5;
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -112,6 +122,7 @@ export interface BoardRow {
   token_status: 'pre-token';
   age_days: number | null;
   implied_value_usd: number;
+  risk_adjusted_value_usd: number;
   risk_tier: RiskTier;
   risk_score: number;
   risk_reasons: string[];
@@ -139,6 +150,7 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
+  risk_adjusted_value_usd: number;
   risk_tier: RiskTier;
   risk_reasons: string[];
   growth_multiplier: number;
@@ -337,6 +349,14 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
   return new Map(protocols.map((p) => [p.slug, p]));
 }
 
+/** The risk-adjusted value: the implied value discounted by half the row's risk score.
+ * The ranking never uses it — the board is always ranked by implied value — but it prices
+ * the row's risk into the number a reader compares, so a high-implied, high-risk row does
+ * not read the same as a high-implied, low-risk one. */
+export function riskAdjustedValue(implied: number, riskScore: number): number {
+  return Math.max(1, Math.round(implied * (1 - RISK_DISCOUNT * Math.min(1, Math.max(0, riskScore)))));
+}
+
 /** The protocols the board ranks, strongest first, with ranks 1..n. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
   const index = bySlug(snapshot.protocols);
@@ -346,12 +366,13 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     const p = index.get(slug);
     if (p !== undefined) chosen.set(slug, p);
   }
-  // The early radar: pre-token protocols below the watchlist floor, by TVL, capped. A chosen
-  // protocol stays chosen; the early rows add to the board, they never replace a watchlist row.
+  // The early radar: every rankable protocol below the watchlist floor. No top-N cut: the
+  // tail is the whole findable universe, so a future launch hiding at $5M of TVL is on the
+  // board instead of cut off at an arbitrary row count. A chosen protocol stays chosen; the
+  // early rows add to the board, they never replace a watchlist row.
   const early = snapshot.protocols
     .filter((p) => !chosen.has(p.slug) && isRankable(p) && p.tvl_usd < snapshot.floor_usd)
-    .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0))
-    .slice(0, EARLY_ROWS);
+    .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   for (const p of early) chosen.set(p.slug, p);
 
   const scored = [...chosen.values()].map((p) => {
@@ -375,6 +396,7 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     token_status: 'pre-token',
     age_days: s.v.age,
     implied_value_usd: s.v.implied,
+    risk_adjusted_value_usd: riskAdjustedValue(s.v.implied, s.risk.score),
     risk_tier: s.risk.tier,
     risk_score: s.risk.score,
     risk_reasons: s.risk.reasons,
@@ -443,15 +465,19 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
 }
 
 /**
- * A protocol's farm plan: six steps, each an action with a cost and a time. The plan is derived
+ * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived
  * from the protocol's own record (category, chains, TVL, age), never from a hand-written list
- * of names.
+ * of names. The seventh step is the recheck: it names the protocol's own age and chain count,
+ * so the plan ends on this row's record instead of on a generic line.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
   const capital = capitalFor(p);
   const hold = holdDaysFor(age);
   const action = actionFor(p, capital, chain);
+  const agePart = age === null ? 'with no listing date in the snapshot' : `${age} days with no token`;
+  const chainPart =
+    p.chains.length === 0 ? 'no chain the snapshot lists' : p.chains.length === 1 ? '1 chain' : `${p.chains.length} chains`;
   return [
     {
       text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
@@ -481,6 +507,11 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
     {
       text: `Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.`,
       cost: 'nothing but the log',
+      time: '5 minutes',
+    },
+    {
+      text: `Recheck this board after ${hold} days: ${p.name} has run ${agePart} across ${chainPart}, and a token — if one ever comes — is this board's own claim, never a promise.`,
+      cost: 'nothing but the check',
       time: '5 minutes',
     },
   ];
@@ -517,6 +548,7 @@ export function radarRow(row: BoardRow): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
+    risk_adjusted_value_usd: row.risk_adjusted_value_usd,
     risk_tier: row.risk_tier,
     risk_reasons: row.risk_reasons,
     growth_multiplier: row.model.growth_multiplier,

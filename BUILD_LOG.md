@@ -128,3 +128,48 @@ this is by design, not a failure of the entry.
   and the dashboard still makes zero network requests. The policy file
   (`/tmp/webgl-policy.txt`, sha256 `c5c85869…035e`) survived; Chrome had to be relaunched
   with the same flag recipe on port 9223.
+
+## Iteration 2026-11-24: model radar-3 — full coverage, risk-adjusted value, seven-step plans
+
+Why: the submitted radar-2 entry passed every validity check, but the judge ranks entries
+pairwise against the field and the house dashboards, so a stronger version is worth a second
+entry before the 2026-12-14 deadline. The changes below are all verifiable from the snapshot
+and the code; no data was invented.
+
+- **Full coverage (criterion 1):** the board went from 200 rows (40 watchlist + top 160 early)
+  to **226 rows — every rankable pre-token protocol in the snapshot**: the 40-protocol
+  watchlist plus all 186 rankable protocols below the floor, with no top-N cut. The snapshot
+  holds 342 pre-token records; 53 are not ranked (42 exchanges, 11 versioned pools of another
+  protocol). The early selection in `buildBoard` no longer slices to a cap. Top implied value
+  is unchanged ($717,599,626, Steakhouse Financial); total implied value is $3,855,077,004
+  (was $3,825,197,999). Risk tiers: LOW 142 / MEDIUM 82 / HIGH 2.
+- **Risk-adjusted value (criterion 2):** each row now carries `risk_adjusted_value_usd` =
+  implied × (1 − 0.5 × risk score), risk score = risk points / 6. It never changes the
+  ranking — the board is always ranked by implied value — but it prices a row's risk into the
+  number shown, so a high-implied, high-risk row does not read the same as a high-implied,
+  low-risk one. Shown in the detail view ("Risk-adjusted: $…") and explained in the model
+  section and the README. Total risk-adjusted value across the board: $3,616,477,400.
+- **Seven-step farm plans (criterion 3):** a seventh step, generated from the row's own
+  record in both `lib/model.ts` (`farmSteps`) and `dashboard/app.js` (`farmSteps`) with
+  identical text: a recheck naming the protocol's age with no token and its chain count.
+  Verified by CDP: the page's rendered seven steps match `board.json` exactly for five
+  sampled rows (Steakhouse Financial, Gauntlet, Lightning Network, OnRe, Vesu), including a
+  null-age row and a one-chain row; the risk-adjusted values shown match too.
+- **Dashboard (criteria 4–5):** the stats row grew to five cards (protocols ranked, watchlist,
+  top implied value, total implied value, HIGH-risk rows); the detail view shows the
+  risk-adjusted value; the model section states the coverage and the risk-adjusted formula.
+  The table itself is unchanged (nine columns, still fits at 1440 px). Dashboard source is
+  33,405 bytes (≤ 64 KB dossier text cap); dossier text 33,671 bytes (≤ 65,536).
+- **Screenshots re-shot** with `tools/radar-shot.mjs` (same recipe: headless Chromium on port
+  9223, `file://` URL, quality 100; the `/tmp/webgl-policy.txt` file had been wiped, so it
+  was recreated as the single header line `hatch-webgl-all-origins-v1`, sha256
+  `8097045f…c6`, and Chrome relaunched with the full flag recipe): `1-board.jpg` 346,070 B
+  ("226 of 226 rows", all nine columns visible), `2-detail.jpg` 327,606 B (Steakhouse detail:
+  $717,599,626, risk-adjusted line, equation, all seven farm steps), `3-filtered.jpg`
+  313,980 B (Lending filter, "14 of 226 rows"). PIL re-encode quality 100 / 4:2:0
+  (subsampling=2); shot 2 needed quality 99 to land in the 300–350 KB band (quality 100
+  gave 363 KB, quality 95 gave 210 KB). All three visually verified: zero JS exceptions,
+  zero network requests at runtime (`resources: []`).
+- **Determinism:** two `main.ts` runs are byte-identical; final dossier **1,351,850 bytes**
+  (1,320 KiB ≤ 1.5 MiB cap) with the new screenshots, text 33,671 bytes (≤ 65,536 cap),
+  all three dossier image sha256 match the files on disk.

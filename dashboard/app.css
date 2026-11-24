@@ -34,9 +34,9 @@ main { padding: 20px 0 8px; }
 .panel .sub { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
 
 /* stats */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
-.stat b { display: block; font-size: 26px; line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stat b { display: block; font-size: 24px; line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; }
 .stat span { color: var(--muted); font-size: 12.5px; }
 
 /* category bars */
@@ -105,6 +105,8 @@ td.name small { color: var(--faint); font-size: 12px; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 12px; }
 .detail-grid h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .big { font-size: 30px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.adjline { margin: -8px 0 12px; color: var(--muted); font-size: 13px; }
+.adjline b { color: var(--text); font-variant-numeric: tabular-nums; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 13.5px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
