@@ -1,0 +1,130 @@
+:root {
+  --bg: #0a0f1c;
+  --surface: #121a2e;
+  --surface-2: #16213a;
+  --border: #233150;
+  --text: #e8edf6;
+  --muted: #93a1b8;
+  --faint: #64748b;
+  --accent: #2dd4a7;
+  --accent-dim: #1d7a61;
+  --amber: #f5b544;
+  --red: #f26d6d;
+  --blue: #7aa2f7;
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 20px; }
+.top { padding: 34px 0 22px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, #0d1526, var(--bg)); }
+.kicker { margin: 0 0 8px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.2; letter-spacing: -.01em; }
+.lede { margin: 0 0 12px; max-width: 780px; color: #c6d0e2; font-size: 16px; }
+.meta { margin: 0; color: var(--muted); font-size: 13px; }
+main { padding: 20px 0 8px; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
+.panel h2 { margin: 0 0 4px; font-size: 15px; }
+.panel .sub { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+
+/* stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.stat b { display: block; font-size: 26px; line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12.5px; }
+
+/* category bars */
+.catgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 22px; }
+.cat { display: grid; grid-template-columns: 170px 1fr 74px 92px; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.cat:hover, .cat.on { background: var(--surface-2); }
+.cat.on { outline: 1px solid var(--accent-dim); }
+.cat .bar { height: 8px; background: #1c2a47; border-radius: 4px; overflow: hidden; }
+.cat .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.cat .n { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.cat .tvl { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.controls input[type="search"], .controls select {
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 10px; font: inherit; font-size: 14px;
+}
+.controls input[type="search"] { flex: 1 1 220px; min-width: 180px; }
+.controls select { cursor: pointer; }
+.tabs { display: flex; gap: 6px; }
+.tab {
+  background: transparent; color: var(--muted); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 12px; font: inherit; font-size: 14px; cursor: pointer;
+}
+.tab[aria-pressed="true"] { background: var(--accent-dim); color: #fff; border-color: var(--accent-dim); }
+.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; cursor: pointer; }
+.count { margin-left: auto; color: var(--muted); font-size: 13px; }
+
+/* table */
+.tablewrap { padding: 0; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 9px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Board table must fit its 1,118px container at a 1440px viewport (was 1,245px,
+   clipping Implied value and hiding Risk): the Chains column wraps instead of
+   forcing the table wider, and cell padding is trimmed 12px -> 9px. */
+th:nth-child(4), td:nth-child(4) { white-space: normal; max-width: 150px; }
+th:first-child, td:first-child { text-align: center; }
+th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { text-align: left; }
+th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+th button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; text-transform: inherit; letter-spacing: inherit; }
+th button:hover { color: var(--text); }
+tbody tr { cursor: pointer; }
+tbody tr:hover, tbody tr.sel { background: var(--surface-2); }
+td.name b { display: block; font-size: 14.5px; }
+td.name small { color: var(--faint); font-size: 12px; }
+.pos { color: var(--accent); }
+.neg { color: var(--red); }
+.implied { font-weight: 700; color: #fff; }
+.tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; vertical-align: 1px; }
+.tag.wl { background: #123f33; color: var(--accent); }
+.tag.early { background: #1c2a47; color: var(--blue); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11.5px; font-weight: 700; letter-spacing: .03em; }
+.badge.LOW { background: #123f33; color: var(--accent); }
+.badge.MEDIUM { background: #3d2f10; color: var(--amber); }
+.badge.HIGH { background: #3d1717; color: var(--red); }
+.empty { padding: 28px; text-align: center; color: var(--muted); }
+.empty button { margin-top: 10px; background: var(--accent-dim); color: #fff; border: 0; border-radius: 7px; padding: 8px 14px; font: inherit; cursor: pointer; }
+
+/* detail */
+#detail { border-color: var(--accent-dim); }
+.detail-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+.detail-head h2 { font-size: 22px; margin: 0; }
+.detail-head .cat { color: var(--muted); font-size: 13.5px; }
+.detail-head .close { margin-left: auto; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 7px; padding: 5px 10px; font: inherit; cursor: pointer; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 12px; }
+.detail-grid h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.big { font-size: 30px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 13.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.eq { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; overflow-x: auto; white-space: nowrap; }
+.reasons { margin: 8px 0 0; padding-left: 18px; color: #c6d0e2; font-size: 13.5px; }
+.reasons li { margin-bottom: 3px; }
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.steps li { counter-increment: s; position: relative; padding: 0 0 12px 34px; font-size: 13.5px; }
+.steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-dim); color: #fff; font-size: 12px; font-weight: 700; text-align: center; line-height: 22px; }
+.steps li b { color: var(--accent); }
+.steps .meta2 { display: block; color: var(--muted); font-size: 12.5px; }
+
+/* model note */
+.model p { margin: 0 0 8px; color: #c6d0e2; font-size: 13.5px; }
+.model code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+footer { padding: 6px 20px 34px; color: var(--faint); font-size: 12.5px; }
+footer p { margin: 0; max-width: 900px; }
+@media (max-width: 760px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .catgrid, .detail-grid { grid-template-columns: 1fr; }
+  .cat { grid-template-columns: 130px 1fr 60px 80px; }
+  h1 { font-size: 24px; }
+}
