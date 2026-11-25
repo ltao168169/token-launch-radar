@@ -122,6 +122,41 @@ td.name small { color: var(--faint); font-size: 12px; }
 /* model note */
 .model p { margin: 0 0 8px; color: #c6d0e2; font-size: 13.5px; }
 .model code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+/* risk strip */
+.riskstrip { grid-column: 1 / -1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+.riskbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #1c2a47; }
+.riskbar i { display: block; height: 100%; }
+.riskbar i.LOW { background: var(--accent); }
+.riskbar i.MEDIUM { background: var(--amber); }
+.riskbar i.HIGH { background: var(--red); }
+.risklegend { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
+.risklegend b.LOW { color: var(--accent); }
+.risklegend b.MEDIUM { color: var(--amber); }
+.risklegend b.HIGH { color: var(--red); }
+
+/* calibration + verification tables */
+.calib { font-size: 13px; margin: 4px 0 12px; }
+.calib th, .calib td { white-space: normal; }
+.calib td.l, .calib th.l { text-align: left; }
+.vkv { max-width: 860px; }
+.vkv dd { text-align: left; word-break: break-all; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+details summary { cursor: pointer; color: var(--accent); font-size: 13.5px; margin-top: 6px; }
+.excluded { columns: 2; column-gap: 28px; margin: 10px 0 2px; padding-left: 18px; font-size: 12.5px; color: #c6d0e2; }
+.excluded li { margin-bottom: 3px; break-inside: avoid; }
+.excluded span { color: var(--muted); }
+
+/* value waterfall */
+.fall { margin: 0 0 14px; padding: 0; list-style: none; font-size: 13px; }
+.fall li { display: flex; justify-content: space-between; gap: 14px; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+.fall li span { color: var(--muted); }
+.fall li b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* compare table */
+.cmp { font-size: 13.5px; }
+.cmp th, .cmp td { white-space: normal; }
+.cmp td.l { text-align: left; color: var(--muted); }
+
 footer { padding: 6px 20px 34px; color: var(--faint); font-size: 12.5px; }
 footer p { margin: 0; max-width: 900px; }
 @media (max-width: 760px) {

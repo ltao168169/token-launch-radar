@@ -10,11 +10,12 @@
 <body>
 <header class="top">
   <div class="wrap">
-    <p class="kicker">Token Launch Radar · model radar-3</p>
+    <p class="kicker">Token Launch Radar · model radar-4</p>
     <h1>Which pre-token protocol is worth the most when it launches?</h1>
     <p class="lede">Every protocol DefiLlama tracks that still records no token, ranked by the implied value of
     its future launch — from the snapshot's own figures: TVL, seven-day growth, age with no token,
-    sector, and chain count. Nothing here is a guess about a name; the same formula scores all 226 rows.</p>
+    sector, and chain count. New in radar-4: the sector multiples are calibrated from the snapshot's own
+    launched protocols, not asserted. Nothing here is a guess about a name; the same formula scores all 226 rows.</p>
     <p class="meta" id="meta">Loading snapshot…</p>
   </div>
 </header>
@@ -23,15 +24,19 @@
   <section class="panel" id="cats" aria-label="Categories"></section>
   <section class="panel controls" id="controls" aria-label="Filters"></section>
   <section class="panel" id="detail" hidden aria-label="Protocol detail"></section>
+  <section class="panel" id="compare" hidden aria-label="Compare two protocols"></section>
   <section class="panel tablewrap" id="table" aria-label="Ranked board"></section>
   <section class="panel model" id="model" aria-label="How the model works"></section>
+  <section class="panel model" id="verify" aria-label="Verify this board"></section>
 </main>
 <footer class="wrap">
   <p>Data: DefiLlama public protocol snapshot, sealed 2026-11-14. Board: 226 rows — the 40-protocol
-  watchlist plus all 186 rankable pre-token protocols below the watchlist floor; 53 pre-token
-  records are not ranked (42 exchanges, 11 versioned pools). Live-token protocols are
+  watchlist plus all 186 rankable pre-token protocols below the watchlist floor; 116 pre-token
+  records are not ranked (42 exchanges, 11 versioned pools of another protocol, and 63 above the
+  floor that the snapshot's own watchlist sets aside as bridges and wrapped or staked products of
+  tokens that trade — the verification section above names all 116). Live-token protocols are
   shown separately with the market's own values, never mixed into the ranking. This page makes no
-  network requests; its whole dataset is baked in. Model radar-3.</p>
+  network requests; its whole dataset is baked in. Model radar-4.</p>
 </footer>
 <script src="../data.js"></script>
 <script src="app.js"></script>

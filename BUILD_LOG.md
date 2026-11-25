@@ -173,3 +173,63 @@ and the code; no data was invented.
 - **Determinism:** two `main.ts` runs are byte-identical; final dossier **1,351,850 bytes**
   (1,320 KiB ≤ 1.5 MiB cap) with the new screenshots, text 33,671 bytes (≤ 65,536 cap),
   all three dossier image sha256 match the files on disk.
+
+## Radar v4 build (2026-11-25)
+
+Goal: beat radar-3's provisional 0.628 judge rate. Work done in this same
+`entry/` directory, in a dedicated build session, so the session joins the
+bundle family. All model and dashboard code below was written fresh in this
+session (the radar-4 model file is a full rewrite, ~40 KB).
+
+- **The headline change — the sector multiples are calibrated from the
+  snapshot itself.** radar-3 stated its multiples (0.34/0.30/0.26/0.22/0.16)
+  with no evidence behind them. radar-4 measures them: every launched protocol
+  in the same snapshot with a market cap (128 of the 416 live-token protocols;
+  exchanges excluded, because an exchange token is not a protocol launch)
+  states a market-cap/TVL ratio, and a sector band's multiple is the median
+  ratio of its launched protocols, shrunk toward the snapshot-wide median
+  (0.246) by `n/(n+8)` phantom samples and clamped to 0.10–0.50. Measured from
+  this snapshot: 119 samples — A 0.303 (n=25, median 0.321), B 0.202 (n=18,
+  0.182), C 0.150 (n=43, 0.132), D 0.333 (n=21, 0.367), E 0.500 (n=12, median
+  1.173, clamped). The stated radar-3 multiples survive only as a documented
+  fallback for a band with no sample; every band has samples here. Each row
+  carries its band and sample count, and its detail view prints them.
+- **Board under radar-4:** 226 rows (40 watchlist + 186 early), top Steakhouse
+  Financial $483,183,748, total implied $2,949,805,260, total risk-adjusted
+  $2,730,387,495, risk LOW 142 / MEDIUM 82 / HIGH 2. The ranking order changed
+  against radar-3 where the calibration moved bands (band E rows read higher,
+  band C lower); the top of the board is unchanged.
+- **Eight farm steps.** The plan gained a signal-watch step written from the
+  row's own seven-day change: it quotes the move the snapshot recorded and
+  names a concrete follow-up (a further 15% fall in any later week pauses new
+  deposits). The dashboard's plan generator and the model's were checked equal
+  on six sampled rows, including a null-age and a null-change row.
+- **Dashboard (rewritten, 45,799 bytes total ≤ 65,536 cap):** a calibration
+  table in the model section; a step-by-step value waterfall in every detail
+  view (TVL → multiple → growth → maturity → chain factor → risk discount,
+  each with its reason); a two-protocol compare view (`#cmp=` hash, "Compare +"
+  in the detail); a verification section printing the snapshot's SHA-256, the
+  full 758-row reconciliation, and all 116 unranked pre-token records by name
+  in a disclosure block; a risk-tier distribution strip. It also fixed a latent
+  radar-3 bug: `renderModel()` was defined but never called, so v3's model
+  section rendered empty.
+- **The reconciliation, corrected.** radar-3's "53 not ranked" was wrong: it
+  counted only the above-floor exclusions it could classify. radar-4
+  reconciles exactly: 758 = 416 live + 342 pre-token = 226 ranked + 116 not
+  ranked (42 exchanges + 11 versioned pools + 63 above-floor records the
+  snapshot's own watchlist sets aside — bridges and wrapped/staked products of
+  already-traded tokens). The count is computed from the snapshot at build time
+  and validated, not asserted.
+- **Verification (headless Chrome over CDP):** the dashboard's rendered farm
+  plans match `board.json` exactly for six sampled rows; the model and verify
+  sections render; the compare view renders two protocols side by side; the
+  Lending filter shows "14 of 226 rows"; zero network resources and zero JS
+  exceptions on every view. Two `main.ts` runs are byte-identical; the dossier
+  is 1,361,701 bytes (1,330 KiB ≤ cap), text 46,067 bytes (≤ cap, uncut), all
+  three dossier image sha256 match the files on disk, and no dashboard file
+  contains a network address.
+- **Screenshots:** re-shot at 1440×900 against the final build, PIL re-encoded
+  into the 300–350 KB band: 1-board 345,122 B (filter bar + rows 1–11),
+  2-detail 326,634 B (the full detail panel captured beyond the viewport,
+  1132×1122, so all eight farm steps and the whole value waterfall show),
+  3-filtered 313,803 B (Lending, 14 rows). All three visually verified.

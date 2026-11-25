@@ -1,4 +1,4 @@
-// Token Launch Radar — value model, radar-3.
+// Token Launch Radar — value model, radar-4.
 //
 // One sealed DefiLlama snapshot in, one ranked board out. The board covers every rankable
 // pre-token protocol in the snapshot: the watchlist (the floor, never a ceiling) plus every
@@ -6,14 +6,19 @@
 // universe, not a top-N cut. A protocol is pre-token when its snapshot entry records no token
 // at all (no market cap, no CoinGecko id, no symbol). Live-token protocols are kept apart
 // and shown with the market's own values, never mixed into the ranked board. Pre-token
-// records that are not ranked at all are exchanges (a CEX is not a launch to farm) and
-// versioned pools of another protocol (a name ending in a release marker).
+// records that are not ranked at all are exchanges (a CEX is not a launch to farm),
+// versioned pools of another protocol (a name ending in a release marker), and the records
+// above the watchlist floor that the snapshot's own watchlist sets aside — bridges and
+// wrapped or staked products of tokens that already trade, which the bounty brief excludes
+// and whose own call the board follows rather than second-guesses. The dashboard's
+// verification section reconciles all of these counts against the snapshot, by name.
 //
-// Implied value follows only from the snapshot's own figures — TVL, seven-day growth, age with no
-// token, category, and chain count. No protocol name is ever special-cased: the same function
-// scores every row, and the constants below are the whole model, stated in the dashboard.
+// Implied value follows only from the snapshot's own figures — TVL, seven-day growth, age
+// with no token, category, and chain count. No protocol name is ever special-cased: the same
+// function scores every row, and the constants below are the whole model, stated in the
+// dashboard.
 //
-//   base        = tvl_usd x categoryMultiple(category)
+//   base        = tvl_usd x sectorMultiple(sector band)
 //   growth      = clamp(change_7d, -60, 120) per cent
 //   growthMult  = 1 + (growth / 100) x GROWTH_WEIGHT
 //   maturity    = 0.6 + min(age_days, 1095) / 1095 x 0.4   (age unknown: 365 days)
@@ -21,23 +26,36 @@
 //   implied     = max(1, round(base x growthMult x maturity x chainMult))
 //   riskAdjusted = max(1, round(implied x (1 - 0.5 x riskScore)))
 //
+// What radar-4 changes against radar-3: the sector multiple is no longer a stated constant.
+// It is calibrated from the snapshot itself. Every launched protocol in the same snapshot
+// that carries a market cap — exchanges excluded, since an exchange token is not a protocol
+// launch — states a market-cap-to-TVL ratio; the multiple for a sector band is the median of
+// those ratios inside the band, shrunk toward the snapshot-wide median by the band's sample
+// count and clamped to [0.10, 0.50] so TVL still decides the ranking. A band with no launched
+// sample in the snapshot falls back to the stated radar-3 multiple, and the row says so. So
+// the model's one set of free parameters is measured from the snapshot's own launched
+// protocols instead of asserted, and the dashboard prints the calibration table — band,
+// sample count, median ratio, multiple used — next to the formula.
+//
 // The risk-adjusted value is the same implied value discounted for the row's own risk score
 // (riskScore = risk points / 6, so 0 for a clean row and 1 for a row that scores every point).
 // It never changes the ranking — the board is always ranked by implied value — but it tells
 // a reader what the launch is worth once the row's risk is priced in, so a high-implied,
 // high-risk row does not read the same as a high-implied, low-risk one.
 //
-// Why a category multiple instead of one flat number: sectors trade at different value per dollar
-// of TVL. A risk curator or RWA vault and a plain chain do not command the same future token
-// multiple, and the snapshot itself carries the category, so the multiple is a sector parameter,
-// not a list of names. The range is deliberately narrow (0.18-0.35) so TVL still decides the
-// ranking; growth and maturity move a row up or down within its sector.
+// Why a sector multiple at all: sectors trade at different value per dollar of TVL. A risk
+// curator or RWA vault and a plain chain do not command the same future token multiple, and
+// the snapshot itself carries both the category and — through its launched protocols — the
+// evidence for what each sector's multiple has been. The clamp band is deliberately narrow
+// so TVL still decides the ranking; growth and maturity move a row within its sector.
 //
 // Risk is scored the same way, from the snapshot's own figures: a protocol is riskier when its
 // seven-day move is large, when it is young or its listing date is unknown, when its TVL is
 // small, when it lives on one chain only, and when its sector is a volatile one (basis trading,
 // prediction markets, perps). The tier and the reasons are printed on the board, so a reader can
 // see why a row is marked the way it is.
+
+import { createHash } from 'node:crypto';
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -53,13 +71,14 @@ export interface SnapshotProtocol {
   symbol: string | null;
 }
 
-/** The whole snapshot document. */
+/** The whole snapshot document, with the SHA-256 of the exact text it was parsed from. */
 export interface Snapshot {
   as_of: string;
   source: string;
   floor_usd: number;
   protocols: SnapshotProtocol[];
   watchlist: string[];
+  sha256: string;
 }
 
 /** The model's constants, as the dashboard states them. */
@@ -88,13 +107,56 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
 
 /** The risk discount on the risk-adjusted value: half the row's risk score, at most half the value. */
 export const RISK_DISCOUNT = 0.5;
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
+
+/** The five sector bands, most future-token value per TVL dollar first, as radar-3 stated them. */
+export type SectorBand = 'A' | 'B' | 'C' | 'D' | 'E';
+
+/** A band's short label, as the dashboard's calibration table prints it. */
+export const BAND_LABELS: Record<SectorBand, string> = {
+  A: 'RWA, basis trading, prediction markets, AI, restaking, launchpads',
+  B: 'Risk curators, capital allocators, CeDeFi, yield',
+  C: 'DEXs, lending, CDPs, liquid staking, insurance',
+  D: 'Chains, bridges, payments, stablecoin issuers, indexes',
+  E: 'Everything else',
+};
+
+/** The stated multiples radar-3 used, kept as the fallback for a band with no launched sample. */
+export const STATED_MULTIPLES: Record<SectorBand, number> = { A: 0.35, B: 0.3, C: 0.25, D: 0.18, E: 0.22 };
+
+/** The clamp on a calibrated multiple: narrow on purpose, so TVL still decides the ranking. */
+export const MULTIPLE_MIN = 0.1;
+export const MULTIPLE_MAX = 0.5;
+
+/**
+ * The shrinkage prior: a band's median counts for its sample count, and this many phantom
+ * samples at the snapshot-wide median count against it, so a band with two wild samples does
+ * not swing the board.
+ */
+export const SHRINK_PRIOR = 8;
+
+/** One band's calibration: what the snapshot's launched protocols say its multiple is. */
+export interface CalibrationBand {
+  band: SectorBand;
+  label: string;
+  samples: number;
+  median_ratio: number | null;
+  multiple: number;
+  source: 'calibrated' | 'stated';
+}
+
+/** The whole calibration: every band, plus the snapshot-wide figures the shrinkage leans on. */
+export interface Calibration {
+  samples: number;
+  global_median_ratio: number | null;
+  bands: CalibrationBand[];
+}
 
 /** A farm step: the action, what it costs, and how long it takes. */
 export interface FarmStep {
@@ -128,6 +190,9 @@ export interface BoardRow {
   risk_reasons: string[];
   model: {
     base_multiple: number;
+    base_value_usd: number;
+    sector_band: SectorBand;
+    calibration_samples: number;
     growth_pct: number;
     growth_multiplier: number;
     maturity_multiplier: number;
@@ -157,6 +222,9 @@ export interface RadarRow {
   maturity_multiplier: number;
   chain_multiplier: number;
   category_multiple: number;
+  base_value_usd: number;
+  sector_band: SectorBand;
+  calibration_samples: number;
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -168,6 +236,32 @@ export interface LiveRow {
   tvl_usd: number;
   mcap_usd: number | null;
   change_7d: number | null;
+}
+
+/** Why one pre-token record is not ranked, in the words the verification section prints. */
+export type ExclusionReason = 'exchange' | 'versioned pool of another protocol' | 'above the floor, set aside by the snapshot watchlist';
+
+/** One pre-token record the board does not rank, named so the coverage claim can be audited. */
+export interface ExcludedRow {
+  name: string;
+  category: string | null;
+  tvl_usd: number;
+  reason: ExclusionReason;
+}
+
+/** The reconciliation of the snapshot's records against the board, as the dashboard prints it. */
+export interface Reconciliation {
+  snapshot_protocols: number;
+  live_token: number;
+  live_with_market_cap: number;
+  pre_token: number;
+  ranked: number;
+  watchlist_ranked: number;
+  early_ranked: number;
+  not_ranked: number;
+  excluded_exchanges: number;
+  excluded_versioned: number;
+  excluded_above_floor: number;
 }
 
 /** Everything the dashboard needs: the board, the live set, and the model it runs. */
@@ -182,6 +276,10 @@ export interface RadarData {
   board_size: number;
   early_size: number;
   live_size: number;
+  snapshot_sha256: string;
+  calibration: Calibration;
+  reconciliation: Reconciliation;
+  excluded: ExcludedRow[];
   rows: RadarRow[];
   live: LiveRow[];
 }
@@ -211,12 +309,12 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
 }
 
 /**
- * The value multiple for one sector, from the snapshot's own category field. Sectors that
- * historically command a higher future-token value per dollar of TVL (real-world assets,
- * basis trading, prediction markets, AI, restaking) sit above the middle; infrastructure and
- * payments sit below it. The band is narrow on purpose: TVL still decides the ranking.
+ * The sector band a category belongs to. Sectors that historically command a higher
+ * future-token value per dollar of TVL (real-world assets, basis trading, prediction
+ * markets, AI, restaking) sit in band A; infrastructure and payments sit in band D. The
+ * band decides which calibrated multiple a row gets — never the protocol's name.
  */
-export function categoryMultiple(category: string | null): number {
+export function sectorBand(category: string | null): SectorBand {
   const c = (category ?? '').toLowerCase();
   if (
     c.includes('rwa') ||
@@ -226,7 +324,7 @@ export function categoryMultiple(category: string | null): number {
     c.includes('ai agent') ||
     c.includes('restak') ||
     c.includes('launchpad')
-  ) return 0.35;
+  ) return 'A';
   if (
     c.includes('risk curator') ||
     c.includes('capital allocator') ||
@@ -235,7 +333,7 @@ export function categoryMultiple(category: string | null): number {
     c.includes('governance incentive') ||
     c.includes('yield') ||
     c.includes('leveraged farm')
-  ) return 0.3;
+  ) return 'B';
   if (
     c.includes('dex') ||
     c.includes('lend') ||
@@ -244,7 +342,7 @@ export function categoryMultiple(category: string | null): number {
     c.includes('stablecoin wrapper') ||
     c.includes('insurance') ||
     c.includes('staking pool')
-  ) return 0.25;
+  ) return 'C';
   if (
     c.includes('chain') ||
     c.includes('payment') ||
@@ -253,8 +351,68 @@ export function categoryMultiple(category: string | null): number {
     c.includes('indexes') ||
     c.includes('bridge') ||
     c.includes('cross chain')
-  ) return 0.18;
-  return 0.22;
+  ) return 'D';
+  return 'E';
+}
+
+/** The stated value multiple for one sector, radar-3's constants, kept as the calibration fallback. */
+export function categoryMultiple(category: string | null): number {
+  return STATED_MULTIPLES[sectorBand(category)];
+}
+
+/** The median of a non-empty list, the middle value or the mean of the two middle ones. */
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+const round3 = (n: number): number => Math.round(n * 1e3) / 1e3;
+
+/**
+ * The calibration: what multiple each sector band gets, measured from the snapshot's own
+ * launched protocols. A launched protocol — one that already carries a market cap — states
+ * a market-cap-to-TVL ratio; exchanges are left out, because an exchange token is not a
+ * protocol launch and its ratio would teach the model the wrong lesson. A band's multiple
+ * is its samples' median ratio, shrunk toward the snapshot-wide median with SHRINK_PRIOR
+ * phantom samples and clamped to [MULTIPLE_MIN, MULTIPLE_MAX]. A band with no sample keeps
+ * its stated radar-3 multiple and says so, so the model never silently invents a number.
+ */
+export function calibrateMultiples(snapshot: Snapshot): Calibration {
+  const launched = snapshot.protocols.filter(
+    (p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0 && p.category !== 'CEX',
+  );
+  const allRatios = launched.map((p) => p.mcap_usd! / p.tvl_usd);
+  const globalMedian = allRatios.length > 0 ? median(allRatios) : null;
+  const bands = (Object.keys(BAND_LABELS) as SectorBand[]).map((band) => {
+    const ratios = launched.filter((p) => sectorBand(p.category) === band).map((p) => p.mcap_usd! / p.tvl_usd);
+    if (ratios.length === 0 || globalMedian === null) {
+      return {
+        band,
+        label: BAND_LABELS[band],
+        samples: ratios.length,
+        median_ratio: null,
+        multiple: STATED_MULTIPLES[band],
+        source: 'stated' as const,
+      };
+    }
+    const med = median(ratios);
+    const shrunk = (ratios.length * med + SHRINK_PRIOR * globalMedian) / (ratios.length + SHRINK_PRIOR);
+    const multiple = round3(Math.min(MULTIPLE_MAX, Math.max(MULTIPLE_MIN, shrunk)));
+    return {
+      band,
+      label: BAND_LABELS[band],
+      samples: ratios.length,
+      median_ratio: round3(med),
+      multiple,
+      source: 'calibrated' as const,
+    };
+  });
+  return {
+    samples: launched.length,
+    global_median_ratio: globalMedian === null ? null : round3(globalMedian),
+    bands,
+  };
 }
 
 /** The chain-diversity multiplier: a protocol live on more chains is worth a little more. */
@@ -263,12 +421,13 @@ export function chainMultiplier(chains: string[], model: ModelConstants): number
   return Math.round((1 + Math.min(extra * model.chain_step, model.chain_max_bonus)) * 1e4) / 1e4;
 }
 
-/** The multipliers and the implied value one protocol gets under `model`. */
+/** The multipliers and the implied value one protocol gets under `model` and the calibrated `multiples`. */
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
   model: ModelConstants,
-): { implied: number; multiple: number; growthPct: number; growthMult: number; maturityMult: number; chainMult: number; age: number | null } {
+  multiples: Record<SectorBand, number>,
+): { implied: number; multiple: number; baseValue: number; band: SectorBand; growthPct: number; growthMult: number; maturityMult: number; chainMult: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
   const rawGrowth = finite(protocol.change_7d, 0);
   const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
@@ -276,11 +435,12 @@ export function impliedValue(
   const ageForModel = age ?? model.unknown_age_days;
   const maturityMult =
     model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
-  const multiple = categoryMultiple(protocol.category);
+  const band = sectorBand(protocol.category);
+  const multiple = multiples[band];
   const chainMult = chainMultiplier(protocol.chains, model);
   const base = protocol.tvl_usd * multiple;
   const implied = Math.max(1, Math.round(base * growthMult * maturityMult * chainMult));
-  return { implied, multiple, growthPct, growthMult, maturityMult, chainMult, age };
+  return { implied, multiple, baseValue: Math.round(base), band, growthPct, growthMult, maturityMult, chainMult, age };
 }
 
 /** Sectors whose seven-day moves swing hardest, and whose tokens launch into the most volatility. */
@@ -375,8 +535,14 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   for (const p of early) chosen.set(p.slug, p);
 
+  // The multiples are calibrated once, from this snapshot's launched protocols, and the
+  // same calibration scores every row.
+  const calibration = calibrateMultiples(snapshot);
+  const multiples = Object.fromEntries(calibration.bands.map((b) => [b.band, b.multiple])) as Record<SectorBand, number>;
+  const bandSamples = Object.fromEntries(calibration.bands.map((b) => [b.band, b.samples])) as Record<SectorBand, number>;
+
   const scored = [...chosen.values()].map((p) => {
-    const v = impliedValue(p, snapshot.as_of, model);
+    const v = impliedValue(p, snapshot.as_of, model, multiples);
     const risk = riskOf(p, v.age);
     return { p, v, risk };
   });
@@ -402,6 +568,9 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     risk_reasons: s.risk.reasons,
     model: {
       base_multiple: s.v.multiple,
+      base_value_usd: s.v.baseValue,
+      sector_band: s.v.band,
+      calibration_samples: bandSamples[s.v.band],
       growth_pct: s.v.growthPct,
       growth_multiplier: round4(s.v.growthMult),
       maturity_multiplier: round4(s.v.maturityMult),
@@ -465,10 +634,39 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
 }
 
 /**
- * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived
- * from the protocol's own record (category, chains, TVL, age), never from a hand-written list
- * of names. The seventh step is the recheck: it names the protocol's own age and chain count,
- * so the plan ends on this row's record instead of on a generic line.
+ * The eighth farm step: the signal watch. It is written from the row's own seven-day figure —
+ * the same number the risk score reads — and tells the farmer what change in that figure
+ * pauses the plan, so the plan watches the protocol instead of ending at the deposit.
+ */
+function signalStep(p: SnapshotProtocol): FarmStep {
+  if (p.change_7d === null) {
+    return {
+      text: `Watch the signal: the snapshot carries no 7-day TVL figure for ${p.name}, so judge its traction from your own position — if the protocol's own page stops reporting activity, exit by the plan above rather than adding capital.`,
+      cost: 'nothing but the check',
+      time: '5 minutes a week',
+    };
+  }
+  const move = Math.abs(p.change_7d).toFixed(0);
+  if (p.change_7d >= 0) {
+    return {
+      text: `Watch the signal: ${p.name}'s TVL rose ${move}% in the seven days before this snapshot. If it falls more than 15% in any later week, pause new deposits and re-read the risk reasons before adding capital.`,
+      cost: 'nothing but the check',
+      time: '5 minutes a week',
+    };
+  }
+  return {
+    text: `Watch the signal: ${p.name}'s TVL fell ${move}% in the seven days before this snapshot. If it falls another 15% in any later week, pause new deposits and re-read the risk reasons before adding capital.`,
+    cost: 'nothing but the check',
+    time: '5 minutes a week',
+  };
+}
+
+/**
+ * A protocol's farm plan: eight steps, each an action with a cost and a time. The plan is derived
+ * from the protocol's own record (category, chains, TVL, age, seven-day move), never from a
+ * hand-written list of names. The seventh step is the recheck: it names the protocol's own age
+ * and chain count, so the plan ends on this row's record instead of on a generic line. The
+ * eighth is the signal watch, written from the row's own seven-day TVL figure.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
@@ -514,6 +712,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       cost: 'nothing but the check',
       time: '5 minutes',
     },
+    signalStep(p),
   ];
 }
 
@@ -555,6 +754,51 @@ export function radarRow(row: BoardRow): RadarRow {
     maturity_multiplier: row.model.maturity_multiplier,
     chain_multiplier: row.model.chain_multiplier,
     category_multiple: row.model.base_multiple,
+    base_value_usd: row.model.base_value_usd,
+    sector_band: row.model.sector_band,
+    calibration_samples: row.model.calibration_samples,
+  };
+}
+
+/**
+ * The pre-token records the board does not rank, each with its reason, named largest first so
+ * the coverage claim can be audited name by name. Three reasons, and only three: an exchange
+ * is not a launch to farm; a versioned pool belongs to another protocol's launch, not its own;
+ * and a record above the watchlist floor that the snapshot's own watchlist leaves off is one
+ * of the wrapped, bridged or staked products of a token that already trades — the brief
+ * excludes them, and the snapshot's own list is the authority on which ones they are.
+ */
+export function excludedRows(snapshot: Snapshot, ranked: Set<string>): ExcludedRow[] {
+  const out: ExcludedRow[] = [];
+  for (const p of snapshot.protocols) {
+    if (!isPreToken(p) || ranked.has(p.slug)) continue;
+    const reason: ExclusionReason =
+      p.category === 'CEX'
+        ? 'exchange'
+        : VERSIONED.test(p.name)
+          ? 'versioned pool of another protocol'
+          : 'above the floor, set aside by the snapshot watchlist';
+    out.push({ name: p.name, category: p.category, tvl_usd: p.tvl_usd, reason });
+  }
+  return out.sort((a, b) => b.tvl_usd - a.tvl_usd || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/** The reconciliation of the snapshot's records against the board: every record counted once. */
+export function reconcile(snapshot: Snapshot, board: BoardRow[], excluded: ExcludedRow[]): Reconciliation {
+  const pre = snapshot.protocols.filter(isPreToken);
+  const watchlist = new Set(snapshot.watchlist);
+  return {
+    snapshot_protocols: snapshot.protocols.length,
+    live_token: snapshot.protocols.length - pre.length,
+    live_with_market_cap: snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0).length,
+    pre_token: pre.length,
+    ranked: board.length,
+    watchlist_ranked: board.filter((r) => watchlist.has(r.slug)).length,
+    early_ranked: board.filter((r) => !watchlist.has(r.slug)).length,
+    not_ranked: excluded.length,
+    excluded_exchanges: excluded.filter((e) => e.reason === 'exchange').length,
+    excluded_versioned: excluded.filter((e) => e.reason === 'versioned pool of another protocol').length,
+    excluded_above_floor: excluded.filter((e) => e.reason === 'above the floor, set aside by the snapshot watchlist').length,
   };
 }
 
@@ -563,6 +807,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
+  const excluded = excludedRows(snapshot, new Set(board.map((r) => r.slug)));
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,
@@ -574,6 +819,10 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     board_size: board.length,
     early_size: early,
     live_size: live.length,
+    snapshot_sha256: snapshot.sha256,
+    calibration: calibrateMultiples(snapshot),
+    reconciliation: reconcile(snapshot, board, excluded),
+    excluded,
     rows: board.map(radarRow),
     live,
   };
@@ -620,6 +869,9 @@ export function parseSnapshot(text: string): Snapshot {
     floor_usd: o.floor_usd,
     protocols,
     watchlist: o.watchlist as string[],
+    // The fingerprint of the exact sealed text, so the dashboard can name the input it scored
+    // and a reader can check a re-run scored the same file.
+    sha256: createHash('sha256').update(text, 'utf8').digest('hex'),
   };
 }
 

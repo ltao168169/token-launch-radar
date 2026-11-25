@@ -6,7 +6,7 @@
   var WL = {};
   D.watchlist.forEach(function (s) { WL[s] = true; });
 
-  var state = { q: '', category: 'all', chain: 'all', risk: 'all', tab: 'pre-token', sort: 'implied', dir: -1, selected: null, wlOnly: false };
+  var state = { q: '', category: 'all', chain: 'all', risk: 'all', tab: 'pre-token', sort: 'implied', dir: -1, selected: null, wlOnly: false, compare: [] };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -64,6 +64,16 @@
     if (/governance/.test(c)) return 'Deposit $' + cap + ' into ' + name + ' on ' + chain + ' and vote once with the position.';
     return 'Deposit $' + cap + ' of USDC into ' + name + ' on ' + chain + ' and keep the position open.';
   }
+  function signalStep(r) {
+    if (r.change_7d == null) {
+      return { t: 'Watch the signal: the snapshot carries no 7-day TVL figure for ' + r.name + ', so judge its traction from your own position — if the protocol\'s own page stops reporting activity, exit by the plan above rather than adding capital.', c: 'nothing but the check', m: '5 minutes a week' };
+    }
+    var move = Math.abs(r.change_7d).toFixed(0);
+    if (r.change_7d >= 0) {
+      return { t: 'Watch the signal: ' + r.name + '\'s TVL rose ' + move + '% in the seven days before this snapshot. If it falls more than 15% in any later week, pause new deposits and re-read the risk reasons before adding capital.', c: 'nothing but the check', m: '5 minutes a week' };
+    }
+    return { t: 'Watch the signal: ' + r.name + '\'s TVL fell ' + move + '% in the seven days before this snapshot. If it falls another 15% in any later week, pause new deposits and re-read the risk reasons before adding capital.', c: 'nothing but the check', m: '5 minutes a week' };
+  }
   function farmSteps(r) {
     var chain = chainOf(r), cap = capitalFor(r), hold = holdFor(r.age_days), gas = cap >= 150 ? 8 : 4;
     var agePart = r.age_days == null ? 'with no listing date in the snapshot' : r.age_days + ' days with no token';
@@ -75,7 +85,8 @@
       { t: 'Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', c: 'the $' + cap + ' stays in the position', m: hold + ' days' },
       { t: 'Before you withdraw, open the protocol\'s own points or rewards page and claim only from the link it publishes.', c: 'no fee to check, and never pay to claim', m: '10 minutes' },
       { t: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', c: 'nothing but the log', m: '5 minutes' },
-      { t: 'Recheck this board after ' + hold + ' days: ' + r.name + ' has run ' + agePart + ' across ' + chainPart + ', and a token — if one ever comes — is this board\'s own claim, never a promise.', c: 'nothing but the check', m: '5 minutes' }
+      { t: 'Recheck this board after ' + hold + ' days: ' + r.name + ' has run ' + agePart + ' across ' + chainPart + ', and a token — if one ever comes — is this board\'s own claim, never a promise.', c: 'nothing but the check', m: '5 minutes' },
+      signalStep(r)
     ];
   }
 
@@ -94,6 +105,7 @@
       else if (k === 'sort') state.sort = v || 'implied';
       else if (k === 'dir') state.dir = v === '1' ? 1 : -1;
       else if (k === 'wl') state.wlOnly = v === '1';
+      else if (k === 'cmp') state.compare = v ? v.split(',').filter(Boolean).slice(0, 2) : [];
     });
   }
   function writeHash() {
@@ -107,6 +119,7 @@
     if (state.sort !== 'implied') p.push('sort=' + state.sort);
     if (state.dir === 1) p.push('dir=1');
     if (state.wlOnly) p.push('wl=1');
+    if (state.compare.length) p.push('cmp=' + state.compare.map(encodeURIComponent).join(','));
     var h = p.join('&');
     if (location.hash.replace(/^#/, '') !== h) history.replaceState(null, '', h ? '#' + h : location.pathname + location.search);
   }
@@ -152,14 +165,22 @@
   }
   function renderStats() {
     var top = D.rows[0];
-    var pre = D.rows.filter(function (r) { return r.risk_tier === 'HIGH'; }).length;
+    var tiers = { LOW: 0, MEDIUM: 0, HIGH: 0 };
+    D.rows.forEach(function (r) { tiers[r.risk_tier]++; });
     var total = D.rows.reduce(function (a, r) { return a + r.implied_value_usd; }, 0);
+    var n = D.board_size || 1;
     document.getElementById('stats').innerHTML =
       '<div class="stat"><b>' + D.board_size + '</b><span>protocols ranked</span></div>' +
       '<div class="stat"><b>' + D.watchlist_size + '</b><span>on the watchlist</span></div>' +
       '<div class="stat"><b>' + fmtUsd(top.implied_value_usd) + '</b><span>top implied value — ' + esc(top.name) + '</span></div>' +
       '<div class="stat"><b>' + fmtUsd(total) + '</b><span>total implied value</span></div>' +
-      '<div class="stat"><b>' + pre + '</b><span>rows marked HIGH risk</span></div>';
+      '<div class="stat"><b>' + tiers.HIGH + '</b><span>rows marked HIGH risk</span></div>' +
+      '<div class="riskstrip"><div class="riskbar">' +
+      '<i class="LOW" style="width:' + (tiers.LOW / n * 100).toFixed(1) + '%"></i>' +
+      '<i class="MEDIUM" style="width:' + (tiers.MEDIUM / n * 100).toFixed(1) + '%"></i>' +
+      '<i class="HIGH" style="width:' + (tiers.HIGH / n * 100).toFixed(1) + '%"></i></div>' +
+      '<p class="risklegend">Risk across the board: <b class="LOW">LOW ' + tiers.LOW + '</b> · <b class="MEDIUM">MEDIUM ' + tiers.MEDIUM + '</b> · ' +
+      '<b class="HIGH">HIGH ' + tiers.HIGH + '</b> — every row is scored from its own figures, and its detail view prints the reasons.</p></div>';
   }
   function renderCats() {
     var agg = {};
@@ -181,28 +202,106 @@
       }).join('') + '</div>';
   }
   function renderModel() {
+    var cal = D.calibration, rec = D.reconciliation;
     document.getElementById('model').innerHTML =
       '<h2>How the model works — model ' + esc(D.model_version) + '</h2>' +
       '<p><code>implied = TVL × sector multiple × (1 + clamped 7-day growth × 0.5) × maturity × chain factor</code></p>' +
-      '<p>Sector multiple: 0.35 for RWA, basis trading, prediction markets, AI and restaking; 0.30 for risk curators, ' +
-      'capital allocators and yield; 0.25 for DEXs, lending, CDPs and staking; 0.18 for chains, payments and ' +
-      'stablecoin issuers; 0.22 for everything else. The band is narrow on purpose — TVL still decides the ranking.</p>' +
+      '<p><b>New in radar-4: the sector multiple is calibrated from this snapshot, not stated.</b> Every launched ' +
+      'protocol in the same snapshot that carries a market cap — ' + cal.samples + ' of them, exchanges excluded, ' +
+      'because an exchange token is not a protocol launch — states a market-cap-to-TVL ratio. A band\'s multiple is ' +
+      'the median ratio of its launched protocols, shrunk toward the snapshot-wide median (' +
+      (cal.global_median_ratio == null ? '—' : cal.global_median_ratio.toFixed(3)) + ') by sample count and clamped ' +
+      'to 0.10–0.50, so TVL still decides the ranking. A band with no launched sample would keep the stated radar-3 ' +
+      'multiple and say so; in this snapshot every band has samples.</p>' +
+      '<table class="calib"><thead><tr><th>Band</th><th>Sectors</th><th>Launched samples</th><th>Median mcap / TVL</th><th>Multiple used</th></tr></thead><tbody>' +
+      cal.bands.map(function (b) {
+        return '<tr><td><b>' + b.band + '</b></td><td class="l">' + esc(b.label) + '</td><td>' + b.samples + '</td>' +
+          '<td>' + (b.median_ratio == null ? '—' : b.median_ratio.toFixed(3)) + '</td>' +
+          '<td><b>' + b.multiple.toFixed(3) + '</b>' + (b.source === 'stated' ? ' (stated)' : '') + '</td></tr>';
+      }).join('') + '</tbody></table>' +
       '<p>Growth is the 7-day TVL change, clamped to −60%…+120%. Maturity runs 0.6 for a brand-new protocol to 1.0 ' +
       'at three years, so a long track record with no token counts for more. The chain factor adds 2% per extra ' +
-      'chain, up to 10%. Age unknown counts as one year.</p>' +
+      'chain, up to 10%. Age unknown counts as one year. Each detail view walks its own row through the formula ' +
+      'step by step, and names the band and sample count behind its multiple.</p>' +
       '<p>Risk-adjusted value is the implied value discounted for the row\'s own risk: ' +
       '<code>risk-adjusted = implied × (1 − 0.5 × risk score)</code>, where the risk score is the row\'s risk ' +
       'points out of 6. It never changes the ranking — the board is always ranked by implied value — but it ' +
       'prices a row\'s risk into the number, so a high-implied, high-risk row does not read the same as a ' +
       'high-implied, low-risk one. Each detail view shows both numbers.</p>' +
-      '<p>Coverage: the board ranks every rankable pre-token protocol in the snapshot — the 40-protocol watchlist ' +
-      'plus all 186 rankable protocols below the watchlist floor, 226 rows in all, with no top-N cut. ' +
-      '53 pre-token records are not ranked: 42 exchanges and 11 versioned pools of another protocol.</p>' +
+      '<p>Coverage: the board ranks every rankable pre-token protocol in the snapshot — the ' + rec.watchlist_ranked +
+      '-protocol watchlist plus all ' + rec.early_ranked + ' rankable protocols below the watchlist floor, ' +
+      rec.ranked + ' rows in all, with no top-N cut. ' + rec.not_ranked + ' pre-token records are not ranked: ' +
+      rec.excluded_exchanges + ' exchanges, ' + rec.excluded_versioned + ' versioned pools of another protocol, and ' +
+      rec.excluded_above_floor + ' above the floor that the snapshot\'s own watchlist sets aside — bridges and ' +
+      'wrapped or staked products of tokens that already trade. The verification section below names all ' +
+      rec.not_ranked + ' of them.</p>' +
       '<p>Risk is scored from the same figures: a sharp 7-day move, a listing under a year old or an ' +
       'unknown listing date, TVL under $100M, a single chain, and a volatile sector each add a point. LOW is 0–2 points, MEDIUM 3–4, HIGH 5–6. ' +
       'The reasons are printed on every row\'s detail view.</p>' +
       '<p>What the radar does not do: no protocol name is ever special-cased, and live-token protocols are never ' +
       'ranked against pre-token ones — their market caps are shown on the Live token tab instead.</p>';
+  }
+
+  /* ---- verification: the board's coverage claim, reconciled against the snapshot ---- */
+  function renderVerify() {
+    var rec = D.reconciliation;
+    document.getElementById('verify').innerHTML =
+      '<h2>Verify this board</h2>' +
+      '<p class="sub">Every number on this page comes from one sealed file, and the build is deterministic: ' +
+      're-running it on the same file writes board.json byte for byte again.</p>' +
+      '<dl class="kv vkv">' +
+      '<dt>Snapshot</dt><dd>DefiLlama public protocol snapshot, as of ' + esc(D.as_of) + '</dd>' +
+      '<dt>SHA-256 of the snapshot file</dt><dd class="mono">' + esc(D.snapshot_sha256) + '</dd>' +
+      '<dt>Watchlist floor</dt><dd>' + fmtFull(D.floor_usd) + '</dd></dl>' +
+      '<table class="calib"><tbody>' +
+      '<tr><td class="l">Protocols in the snapshot</td><td><b>' + rec.snapshot_protocols + '</b></td></tr>' +
+      '<tr><td class="l">Already record a token — never ranked; the Live token tab shows the top ' + D.live_size + ' by market cap</td><td><b>' + rec.live_token + '</b></td></tr>' +
+      '<tr><td class="l">Record no token yet</td><td><b>' + rec.pre_token + '</b></td></tr>' +
+      '<tr><td class="l">Ranked on this board — ' + rec.watchlist_ranked + ' watchlist + ' + rec.early_ranked + ' early</td><td><b>' + rec.ranked + '</b></td></tr>' +
+      '<tr><td class="l">Not ranked — ' + rec.excluded_exchanges + ' exchanges, ' + rec.excluded_versioned + ' versioned pools, ' + rec.excluded_above_floor + ' above the floor set aside by the snapshot\'s watchlist</td><td><b>' + rec.not_ranked + '</b></td></tr>' +
+      '</tbody></table>' +
+      '<p>Watchlist rows sit on the snapshot\'s own list, at or above the floor. EARLY rows are every rankable ' +
+      'protocol below the floor, where the board applies the brief\'s rule directly: no token, not an exchange, ' +
+      'not a versioned pool of another protocol. Above the floor the board follows the snapshot\'s own watchlist, ' +
+      'which already sets aside bridges and wrapped or staked products of tokens that trade — WBTC and Binance ' +
+      'staked ETH record no token of their own, but they are products of tokens that trade, so they are not ' +
+      'launches to rank.</p>' +
+      '<details><summary>All ' + rec.not_ranked + ' pre-token records not ranked, by name</summary>' +
+      '<ul class="excluded">' + D.excluded.map(function (e) {
+        return '<li><b>' + esc(e.name) + '</b> <span>' + esc(e.category || '—') + ' · ' + fmtUsd(e.tvl_usd) + ' · ' + esc(e.reason) + '</span></li>';
+      }).join('') + '</ul></details>';
+  }
+
+  /* ---- compare: two protocols side by side ---- */
+  function rowBySlug(slug) { return D.rows.filter(function (x) { return x.slug === slug; })[0] || null; }
+  function renderCompare() {
+    var el = document.getElementById('compare');
+    var a = state.compare.length > 0 ? rowBySlug(state.compare[0]) : null;
+    var b = state.compare.length > 1 ? rowBySlug(state.compare[1]) : null;
+    if (!a || !b) { el.hidden = true; el.innerHTML = ''; return; }
+    function cell(r, f) { return '<td>' + f(r) + '</td>'; }
+    var lines = [
+      ['Rank', function (r) { return '#' + r.rank + (WL[r.slug] ? ' · WATCHLIST' : ' · EARLY'); }],
+      ['Category', function (r) { return esc(r.category || '—'); }],
+      ['Chains', function (r) { return esc(r.chains.join(', ') || '—'); }],
+      ['TVL', function (r) { return fmtFull(r.tvl_usd); }],
+      ['7-day change', function (r) { return fmtPct(r.change_7d); }],
+      ['Age, no token', function (r) { return r.age_days == null ? 'unknown' : r.age_days + ' days'; }],
+      ['Sector multiple', function (r) { return r.category_multiple.toFixed(3) + ' (band ' + r.sector_band + ', ' + r.calibration_samples + ' samples)'; }],
+      ['Implied value', function (r) { return '<b>' + fmtFull(r.implied_value_usd) + '</b>'; }],
+      ['Risk-adjusted', function (r) { return fmtFull(r.risk_adjusted_value_usd); }],
+      ['Risk', function (r) { return '<span class="badge ' + r.risk_tier + '">' + r.risk_tier + '</span>'; }]
+    ];
+    el.hidden = false;
+    el.innerHTML = '<div class="detail-head"><h2>Compare</h2>' +
+      '<button type="button" class="close" id="clearCompare">Clear ×</button></div>' +
+      '<table class="cmp"><thead><tr><th></th><th>' + esc(a.name) + '</th><th>' + esc(b.name) + '</th></tr></thead><tbody>' +
+      lines.map(function (ln) { return '<tr><td class="l">' + ln[0] + '</td>' + cell(a, ln[1]) + cell(b, ln[1]) + '</tr>'; }).join('') +
+      '</tbody></table>' +
+      '<p class="sub" style="margin-top:10px">Same model, same snapshot: the gap between these two rows is TVL, sector, growth, age and chains — nothing else.</p>';
+    el.querySelector('#clearCompare').addEventListener('click', function () {
+      state.compare = []; writeHash(); renderCompare(); renderDetail();
+    });
   }
 
   /* ---- controls ---- */
@@ -300,10 +399,14 @@
     if (!r) { el.hidden = true; el.innerHTML = ''; return; }
     var tag = WL[r.slug] ? '<span class="tag wl">WATCHLIST</span>' : '<span class="tag early">EARLY — below the watchlist floor</span>';
     var steps = farmSteps(r);
+    var inCompare = state.compare.indexOf(r.slug) >= 0;
+    var afterGrowth = Math.round(r.base_value_usd * r.growth_multiplier);
+    var afterMaturity = Math.round(afterGrowth * r.maturity_multiplier);
     el.hidden = false;
     el.innerHTML =
       '<div class="detail-head"><h2>#' + r.rank + ' ' + esc(r.name) + '</h2>' + tag +
       '<span class="cat">' + esc(r.category || '—') + ' · ' + esc(r.chains.join(', ')) + '</span>' +
+      '<button type="button" class="close" id="cmpBtn">' + (inCompare ? 'In compare ✓' : 'Compare +') + '</button>' +
       '<button type="button" class="close" id="closeDetail">Close ×</button></div>' +
       '<div class="detail-grid"><div>' +
       '<p class="big">' + fmtFull(r.implied_value_usd) + '</p>' +
@@ -319,11 +422,17 @@
       r.risk_reasons.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
       '</div><div>' +
       '<h3>How the value is built</h3>' +
-      '<p class="eq">' + fmtUsd(r.tvl_usd) + ' × ' + r.category_multiple.toFixed(2) + ' × ' + r.growth_multiplier.toFixed(2) +
+      '<p class="eq">' + fmtUsd(r.tvl_usd) + ' × ' + r.category_multiple.toFixed(3) + ' × ' + r.growth_multiplier.toFixed(2) +
       ' × ' + r.maturity_multiplier.toFixed(2) + ' × ' + r.chain_multiplier.toFixed(2) + ' = ' + fmtUsd(r.implied_value_usd) + '</p>' +
-      '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">TVL × sector multiple × growth × maturity × chain factor. ' +
-      'Each factor comes from this protocol\'s own snapshot record.</p>' +
-      '<h3>Farm plan — seven steps</h3><ol class="steps">' +
+      '<ul class="fall">' +
+      '<li><span>TVL</span><b>' + fmtUsd(r.tvl_usd) + '</b></li>' +
+      '<li><span>× sector multiple ' + r.category_multiple.toFixed(3) + ' — band ' + r.sector_band + ', calibrated from ' + r.calibration_samples + ' launched protocols in this snapshot</span><b>' + fmtUsd(r.base_value_usd) + '</b></li>' +
+      '<li><span>× growth ' + r.growth_multiplier.toFixed(2) + ' — its 7-day TVL change, clamped</span><b>' + fmtUsd(afterGrowth) + '</b></li>' +
+      '<li><span>× maturity ' + r.maturity_multiplier.toFixed(2) + ' — ' + (r.age_days == null ? 'age unknown, counted as one year' : r.age_days + ' days with no token') + '</span><b>' + fmtUsd(afterMaturity) + '</b></li>' +
+      '<li><span>× chain factor ' + r.chain_multiplier.toFixed(2) + ' — ' + (r.chains.length === 1 ? '1 chain' : r.chains.length + ' chains') + '</span><b>' + fmtUsd(r.implied_value_usd) + '</b></li>' +
+      '<li><span>risk discount — the row\'s own risk score, priced in</span><b>' + fmtUsd(r.risk_adjusted_value_usd) + ' risk-adjusted</b></li>' +
+      '</ul>' +
+      '<h3>Farm plan — eight steps</h3><ol class="steps">' +
       steps.map(function (s) {
         return '<li>' + esc(s.t) + '<span class="meta2">Cost: ' + esc(s.c) + ' · Time: ' + esc(s.m) + '</span></li>';
       }).join('') + '</ol>' +
@@ -331,10 +440,17 @@
     el.querySelector('#closeDetail').addEventListener('click', function () {
       state.selected = null; writeHash(); renderDetail(); renderTable();
     });
+    el.querySelector('#cmpBtn').addEventListener('click', function () {
+      var i = state.compare.indexOf(r.slug);
+      if (i >= 0) state.compare.splice(i, 1);
+      else { state.compare.push(r.slug); if (state.compare.length > 2) state.compare.shift(); }
+      writeHash(); renderDetail(); renderCompare();
+      if (state.compare.length === 2) document.getElementById('compare').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
   }
 
   function render() {
-    renderMeta(); renderStats(); renderCats(); renderControls(); renderDetail(); renderTable();
+    renderMeta(); renderStats(); renderCats(); renderControls(); renderDetail(); renderCompare(); renderTable(); renderModel(); renderVerify();
   }
   document.getElementById('cats').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('[data-cat]') : null;
