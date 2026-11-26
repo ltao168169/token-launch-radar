@@ -233,3 +233,92 @@ session (the radar-4 model file is a full rewrite, ~40 KB).
   2-detail 326,634 B (the full detail panel captured beyond the viewport,
   1132×1122, so all eight farm steps and the whole value waterfall show),
   3-filtered 313,803 B (Lending, 14 rows). All three visually verified.
+
+## Radar v5 build (2026-11-26)
+
+Goal: push past radar-4's provisional 0.901 toward the prize line (~0.94).
+Same discipline as v4: all work in this `entry/` directory in one dedicated
+build session, model and dashboard written fresh in the session (the radar-5
+model file is a full rewrite, ~61 KB). The base ranking formula and the
+calibrated median multiples are unchanged from radar-4 — the board's 226
+base values are byte-identical to v4's — so v5's claim rests on what it adds
+around that proven core, not on a new ranking nobody can check.
+
+- **Scenario ranges (bear / base / bull) on every row.** The calibration now
+  also measures each band's 20th and 80th percentile launch ratios, shrunk
+  exactly like the median (8 phantom samples at the snapshot-wide statistic)
+  and clamped wider than the base — [0.05, 1.50] against [0.10, 0.50] —
+  because the base multiple's job is to rank and the scenario multiples' job
+  is to span what the band's launches actually did. The bear case also drops
+  growth credit (keeps only the recorded downside). Measured multiples:
+  A 0.065/0.303/1.114, B 0.050/0.202/1.145, C 0.050/0.150/1.313,
+  D 0.111/0.333/1.500, E 0.050/0.500/1.500. Board totals: base $2,949,805,260,
+  bear $731,575,686, bull $16,077,723,308. Top row Steakhouse Financial:
+  $483,183,748 base, $119,599,938 bear, $2,738,838,572 bull. `boardIssue` now
+  also refuses a board whose ranges fall out of order (bear ≤ base ≤ bull).
+- **Sensitivity per row.** Each row names the assumption its value leans on:
+  the sector multiple's spread ((bull − bear) / base, 290–842% by band) or
+  the 7-day growth contribution. On this snapshot every row leans on the
+  multiple — the dashboard prints both figures per row rather than asserting
+  the conclusion.
+- **Confidence score per row (0–100).** Five stated parts: band evidence
+  (30 × min(1, samples/40)), record completeness (7-day change recorded 10,
+  listing date recorded 10), scale (TVL steps, 20 at $1B+), stability
+  (|7-day move| steps, 15 within 5%), track record (age steps, 15 at 3y+).
+  Labels HIGH ≥ 70, MEDIUM 45–69, LOW < 45. Board distribution:
+  HIGH 73 / MEDIUM 146 / LOW 7. The detail view prints all five parts.
+- **The cross-check (validation).** The 119 launched protocols (mcap > 0,
+  TVL > 0, not CEX) are split by FNV-1a slug-hash parity; each half is
+  calibrated on the other, so all 119 get one out-of-sample prediction.
+  Pooled results, computed at build time and printed in the dashboard's
+  cross-check section: Spearman ρ model 0.451 vs raw TVL 0.413; median
+  actual/base 1.409×; scenario coverage 54/119 = 45.4% (per band: A 56%,
+  B 50%, C 41.9%, D 47.6%, E 25%). The section states the limits plainly:
+  cross-sectional (today's mcap vs today's TVL — the snapshot holds no
+  history, so no true backtest exists), small halves, band E weakest.
+  Design prototypes were run against the snapshot before building (in /tmp):
+  the tight-clamp scenario variant covered only ~30% out of sample, which is
+  why the scenario clamp is wide and the percentiles are 20/80.
+- **Curation.** Shortlist rule: risk ≠ HIGH and confidence ≥ 50, top 8 by
+  risk-adjusted value — Steakhouse Financial, Gauntlet, Veda, USDD, Upshift,
+  OnRe, OpenTrade, Plume Vaults; basket sums $367,809,356 bear /
+  $1,477,798,138 base / $8,396,208,148 bull. Avoid rule: the board's top 5 by
+  base value among rows with HIGH risk, LOW confidence, or a ≥30% 7-day fall
+  — Noble, Plasma One, Ink Bridge, Shift DeFi, Scroll Bridge (10 rows
+  qualify). Rationales are generated in the page from each row's own figures.
+  A "Shortlist only" filter joins the controls.
+- **Dashboard (rewritten, 62,740 bytes total ≤ 65,536 dossier text cap;
+  dossier text 63,414 bytes, uncut):** scenario range bars under every base
+  value (log scale, base ticked), a Conf. column, scenario + confidence
+  panels in every detail view, compare view extended with bear/bull/
+  confidence rows, the shortlist section with basket line and avoid list,
+  the cross-check section, calibration table with bear/base/bull columns.
+  Also fixed a latent state bug the new filter exposed: `readHash` now
+  resets view state before applying a hash, so a linked view never inherits
+  filters the link does not name (v4's reader kept them).
+- **Verification (headless Chrome over CDP, file:// render of the final
+  out/):** zero network resources, zero JS exceptions; 226 rows render and
+  the 10-column table fits its container exactly (1,118 px = 1,118 px);
+  rendered farm plans match `board.json` exactly for six sampled rows
+  (Steakhouse Financial, OnRe, Noble, Shift DeFi, a null-age row —
+  Lightning Network — and a null-change row — Estate Protocol); scenario
+  values and confidence scores shown match the board for the same rows;
+  shortlist filter shows "8 of 226 rows", Lending filter "14 of 226 rows";
+  compare view renders both protocols with scenario and confidence rows;
+  picks section renders 8 cards and 5 avoid items; the cross-check section
+  shows the build's own numbers (0.451 / 0.413 / 45.4%).
+- **Determinism and dossier:** two `main.ts` runs byte-identical; final
+  dossier 1,426,834 bytes (1,393 KiB ≤ 1,572,864 cap), text 63,414 bytes
+  (≤ 65,536 cap, uncut), all three dossier image sha256 match the files on
+  disk; no dashboard file contains a network address.
+- **Screenshots:** re-shot at 1440×900 against the final build (the
+  `/tmp/webgl-policy.txt` file had been wiped again; recreated as the single
+  header line, sha256 8097045f…c6, Chrome relaunched with the proven flag
+  recipe): 1-board 349,945 B (controls + rows 1–10, range bars and Conf.
+  column visible), 2-detail 349,939 B (the full Steakhouse detail panel
+  clip-captured beyond the viewport, 1120×1168 — scenario range, confidence
+  breakdown, waterfall, sensitivity note, all eight farm steps),
+  3-filtered 321,275 B (Shortlist only filter, "8 of 226 rows", shortlist
+  section beginning below). PIL re-encoded into the 300–350 KB band
+  (shot 1 at quality 99 / 4:4:4, shot 2 at quality 97 / 4:2:0, shot 3 at
+  quality 100 / 4:2:0). All three visually verified.

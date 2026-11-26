@@ -1,4 +1,4 @@
-// Token Launch Radar — value model, radar-4.
+// Token Launch Radar — value model, radar-5.
 //
 // One sealed DefiLlama snapshot in, one ranked board out. The board covers every rankable
 // pre-token protocol in the snapshot: the watchlist (the floor, never a ceiling) plus every
@@ -13,7 +13,7 @@
 // and whose own call the board follows rather than second-guesses. The dashboard's
 // verification section reconciles all of these counts against the snapshot, by name.
 //
-// Implied value follows only from the snapshot's own figures — TVL, seven-day growth, age
+// The base value follows only from the snapshot's own figures — TVL, seven-day growth, age
 // with no token, category, and chain count. No protocol name is ever special-cased: the same
 // function scores every row, and the constants below are the whole model, stated in the
 // dashboard.
@@ -26,16 +26,47 @@
 //   implied     = max(1, round(base x growthMult x maturity x chainMult))
 //   riskAdjusted = max(1, round(implied x (1 - 0.5 x riskScore)))
 //
-// What radar-4 changes against radar-3: the sector multiple is no longer a stated constant.
-// It is calibrated from the snapshot itself. Every launched protocol in the same snapshot
-// that carries a market cap — exchanges excluded, since an exchange token is not a protocol
-// launch — states a market-cap-to-TVL ratio; the multiple for a sector band is the median of
-// those ratios inside the band, shrunk toward the snapshot-wide median by the band's sample
-// count and clamped to [0.10, 0.50] so TVL still decides the ranking. A band with no launched
-// sample in the snapshot falls back to the stated radar-3 multiple, and the row says so. So
-// the model's one set of free parameters is measured from the snapshot's own launched
-// protocols instead of asserted, and the dashboard prints the calibration table — band,
-// sample count, median ratio, multiple used — next to the formula.
+// What radar-5 changes against radar-4, and why:
+//
+// 1. Every row carries a scenario range, not just a point. The sector multiple is the one
+//    input the model cannot observe for a pre-token protocol — it is borrowed from the
+//    band's launched protocols, whose market-cap-to-TVL ratios are wildly dispersed (in
+//    this snapshot they run from under 0.01 to over 100 inside a single band). So beside
+//    the median multiple that sets the base value, the calibration also measures the
+//    band's 20th and 80th percentile ratios, shrunk the same way, and the row's bear and
+//    bull values are its TVL priced at those multiples — the bear case also drops any
+//    growth credit, keeping only the downside the snapshot recorded. The base multiple
+//    stays clamped to [0.10, 0.50] so TVL decides the ranking; the scenario multiples are
+//    clamped wider, to [0.05, 1.50], because their job is not to rank but to span what
+//    launches in the band actually did. Each row also names which assumption its value
+//    leans on hardest — the sector multiple's spread or the growth contribution — so a
+//    reader can see where a number is soft before trusting it.
+//
+// 2. Every row carries a confidence score, 0 to 100, built only from the quality of the
+//    evidence behind that row: how many launched protocols calibrate its band, whether
+//    the snapshot records its seven-day change and its listing date, how large its TVL
+//    is, how steady its week was, and how long its track record runs. It is a statement
+//    about the row's inputs, never about the protocol's quality, and the dashboard prints
+//    the five parts so the score can be argued with.
+//
+// 3. The model is cross-checked against the snapshot's own launched protocols, and the
+//    result ships with the board. The launched protocols are split in two by a hash of
+//    their slug; each half is calibrated on the other, so every launched protocol gets
+//    one prediction from a calibration that never saw it. Scored as if they were still
+//    pre-token and compared with the market caps they actually carry, they measure what
+//    this kind of model is worth: how well it ranks (a Spearman rank correlation, set
+//    against raw TVL's), how conservative its base case runs (the median ratio of actual
+//    to predicted), and how often a launch lands inside its scenario range. The check is
+//    cross-sectional — it compares today's market cap with today's TVL, not a launch
+//    price with a launch-day TVL — and the dashboard says so, next to the numbers.
+//
+// 4. The board is curated, by stated rules, into a shortlist and an avoid list. The
+//    shortlist is the eight rows with the highest risk-adjusted value among rows whose
+//    risk is not HIGH and whose confidence clears the bar the curation states; the avoid
+//    list is the highest-implied rows whose risk is HIGH, whose confidence is low, or
+//    whose TVL fell steeply in the snapshot's week. Each name carries its reason, derived
+//    from its own figures. The dashboard also prices an equal-weight basket of the
+//    shortlist across the three scenarios, so the picks read as a portfolio, not a poster.
 //
 // The risk-adjusted value is the same implied value discounted for the row's own risk score
 // (riskScore = risk points / 6, so 0 for a clean row and 1 for a row that scores every point).
@@ -46,8 +77,9 @@
 // Why a sector multiple at all: sectors trade at different value per dollar of TVL. A risk
 // curator or RWA vault and a plain chain do not command the same future token multiple, and
 // the snapshot itself carries both the category and — through its launched protocols — the
-// evidence for what each sector's multiple has been. The clamp band is deliberately narrow
-// so TVL still decides the ranking; growth and maturity move a row within its sector.
+// evidence for what each sector's multiple has been. The clamp band on the base multiple is
+// deliberately narrow so TVL still decides the ranking; growth and maturity move a row
+// within its sector, and the scenario range shows how far the multiple itself could move it.
 //
 // Risk is scored the same way, from the snapshot's own figures: a protocol is riskier when its
 // seven-day move is large, when it is young or its listing date is unknown, when its TVL is
@@ -107,7 +139,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-5';
 
 /** The risk discount on the risk-adjusted value: half the row's risk score, at most half the value. */
 export const RISK_DISCOUNT = 0.5;
@@ -130,24 +162,41 @@ export const BAND_LABELS: Record<SectorBand, string> = {
 /** The stated multiples radar-3 used, kept as the fallback for a band with no launched sample. */
 export const STATED_MULTIPLES: Record<SectorBand, number> = { A: 0.35, B: 0.3, C: 0.25, D: 0.18, E: 0.22 };
 
-/** The clamp on a calibrated multiple: narrow on purpose, so TVL still decides the ranking. */
+/** The clamp on the calibrated base multiple: narrow on purpose, so TVL still decides the ranking. */
 export const MULTIPLE_MIN = 0.1;
 export const MULTIPLE_MAX = 0.5;
 
 /**
- * The shrinkage prior: a band's median counts for its sample count, and this many phantom
- * samples at the snapshot-wide median count against it, so a band with two wild samples does
- * not swing the board.
+ * The clamp on the scenario (bear/bull) multiples: wider than the base clamp on purpose.
+ * The base multiple ranks; the scenario multiples describe — they span the middle of what
+ * the band's launches actually did, and a tight clamp would pretend that spread is smaller
+ * than the snapshot says it is.
+ */
+export const SCENARIO_MIN = 0.05;
+export const SCENARIO_MAX = 1.5;
+
+/** The percentiles of a band's launch ratios that price the bear and bull cases. */
+export const SCENARIO_LOW_PCT = 0.2;
+export const SCENARIO_HIGH_PCT = 0.8;
+
+/**
+ * The shrinkage prior: a band's statistic counts for its sample count, and this many phantom
+ * samples at the snapshot-wide statistic count against it, so a band with two wild samples
+ * does not swing the board.
  */
 export const SHRINK_PRIOR = 8;
 
-/** One band's calibration: what the snapshot's launched protocols say its multiple is. */
+/** One band's calibration: what the snapshot's launched protocols say its multiples are. */
 export interface CalibrationBand {
   band: SectorBand;
   label: string;
   samples: number;
   median_ratio: number | null;
+  low_ratio: number | null;
+  high_ratio: number | null;
   multiple: number;
+  bear_multiple: number;
+  bull_multiple: number;
   source: 'calibrated' | 'stated';
 }
 
@@ -168,6 +217,32 @@ export interface FarmStep {
 /** A protocol's risk tier, with the score and the reasons behind it. */
 export type RiskTier = 'LOW' | 'MEDIUM' | 'HIGH';
 
+/** A row's confidence label, from its evidence score. */
+export type ConfidenceLabel = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** The five parts of a row's confidence score, each printed on the detail view. */
+export interface ConfidenceParts {
+  evidence: number;
+  record: number;
+  scale: number;
+  stability: number;
+  track: number;
+}
+
+/** A row's confidence: the total, its label, and the five parts it is summed from. */
+export interface Confidence {
+  score: number;
+  label: ConfidenceLabel;
+  parts: ConfidenceParts;
+}
+
+/** Which assumption a row's value leans on hardest, and by how much it can move the value. */
+export interface Sensitivity {
+  driver: 'sector multiple' | '7-day growth';
+  multiple_spread_pct: number;
+  growth_contribution_pct: number;
+}
+
 /** One row of board.json: the ranked board's row. */
 export interface BoardRow {
   rank: number;
@@ -184,12 +259,19 @@ export interface BoardRow {
   token_status: 'pre-token';
   age_days: number | null;
   implied_value_usd: number;
+  bear_value_usd: number;
+  bull_value_usd: number;
   risk_adjusted_value_usd: number;
   risk_tier: RiskTier;
   risk_score: number;
   risk_reasons: string[];
+  confidence_score: number;
+  confidence_label: ConfidenceLabel;
+  confidence_parts: ConfidenceParts;
   model: {
     base_multiple: number;
+    bear_multiple: number;
+    bull_multiple: number;
     base_value_usd: number;
     sector_band: SectorBand;
     calibration_samples: number;
@@ -198,6 +280,10 @@ export interface BoardRow {
     maturity_multiplier: number;
     chain_multiplier: number;
     age_days: number | null;
+    sensitivity_driver: 'sector multiple' | '7-day growth';
+    sensitivity_pct: number;
+    multiple_spread_pct: number;
+    growth_contribution_pct: number;
   };
   farm_steps: string[];
 }
@@ -215,16 +301,26 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
+  bear_value_usd: number;
+  bull_value_usd: number;
   risk_adjusted_value_usd: number;
   risk_tier: RiskTier;
   risk_reasons: string[];
+  confidence_score: number;
+  confidence_label: ConfidenceLabel;
+  confidence_parts: ConfidenceParts;
   growth_multiplier: number;
   maturity_multiplier: number;
   chain_multiplier: number;
   category_multiple: number;
+  bear_multiple: number;
+  bull_multiple: number;
   base_value_usd: number;
   sector_band: SectorBand;
   calibration_samples: number;
+  sensitivity_driver: 'sector multiple' | '7-day growth';
+  multiple_spread_pct: number;
+  growth_contribution_pct: number;
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -264,6 +360,39 @@ export interface Reconciliation {
   excluded_above_floor: number;
 }
 
+/** One band's line in the cross-check: how the model did on that band's held-out launches. */
+export interface ValidationBand {
+  band: SectorBand;
+  n: number;
+  median_actual_over_base: number | null;
+  coverage_pct: number | null;
+}
+
+/**
+ * The cross-check of the model against the snapshot's launched protocols. Every figure is
+ * out-of-sample in the pooled split-half sense: each launched protocol was predicted by a
+ * calibration fitted on the other half of the launched set, split by a hash of the slug.
+ */
+export interface Validation {
+  checked: number;
+  spearman_model: number | null;
+  spearman_tvl: number | null;
+  median_actual_over_base: number | null;
+  coverage_n: number;
+  coverage_pct: number | null;
+  bands: ValidationBand[];
+}
+
+/** The curation: the shortlist, the avoid list, and the shortlist priced as one basket. */
+export interface Curation {
+  picks: string[];
+  avoid: string[];
+  basket_rows: number;
+  basket_bear_usd: number;
+  basket_base_usd: number;
+  basket_bull_usd: number;
+}
+
 /** Everything the dashboard needs: the board, the live set, and the model it runs. */
 export interface RadarData {
   as_of: string;
@@ -279,6 +408,8 @@ export interface RadarData {
   snapshot_sha256: string;
   calibration: Calibration;
   reconciliation: Reconciliation;
+  validation: Validation;
+  curation: Curation;
   excluded: ExcludedRow[];
   rows: RadarRow[];
   live: LiveRow[];
@@ -312,7 +443,7 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
  * The sector band a category belongs to. Sectors that historically command a higher
  * future-token value per dollar of TVL (real-world assets, basis trading, prediction
  * markets, AI, restaking) sit in band A; infrastructure and payments sit in band D. The
- * band decides which calibrated multiple a row gets — never the protocol's name.
+ * band decides which calibrated multiples a row gets — never the protocol's name.
  */
 export function sectorBand(category: string | null): SectorBand {
   const c = (category ?? '').toLowerCase();
@@ -367,23 +498,55 @@ function median(values: number[]): number {
   return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
-const round3 = (n: number): number => Math.round(n * 1e3) / 1e3;
+/** A percentile of a non-empty list, linearly interpolated between the two nearest ranks. */
+function percentile(values: number[], q: number): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length === 1) return sorted[0]!;
+  const at = (sorted.length - 1) * q;
+  const lo = Math.floor(at);
+  const hi = Math.ceil(at);
+  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (at - lo);
+}
 
-/**
- * The calibration: what multiple each sector band gets, measured from the snapshot's own
- * launched protocols. A launched protocol — one that already carries a market cap — states
- * a market-cap-to-TVL ratio; exchanges are left out, because an exchange token is not a
- * protocol launch and its ratio would teach the model the wrong lesson. A band's multiple
- * is its samples' median ratio, shrunk toward the snapshot-wide median with SHRINK_PRIOR
- * phantom samples and clamped to [MULTIPLE_MIN, MULTIPLE_MAX]. A band with no sample keeps
- * its stated radar-3 multiple and says so, so the model never silently invents a number.
- */
-export function calibrateMultiples(snapshot: Snapshot): Calibration {
-  const launched = snapshot.protocols.filter(
+const round3 = (n: number): number => Math.round(n * 1e3) / 1e3;
+const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+
+/** The launched protocols a calibration or cross-check may learn from: a market cap, a TVL, not an exchange. */
+function launchedProtocols(snapshot: Snapshot): SnapshotProtocol[] {
+  return snapshot.protocols.filter(
     (p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0 && p.category !== 'CEX',
   );
+}
+
+/**
+ * One statistic of a band, shrunk toward the same statistic of every launched protocol:
+ * the band's samples count for their number, and SHRINK_PRIOR phantom samples at the
+ * snapshot-wide figure count against them.
+ */
+function shrunk(bandValues: number[], allValues: number[], stat: (v: number[]) => number): number {
+  return (bandValues.length * stat(bandValues) + SHRINK_PRIOR * stat(allValues)) / (bandValues.length + SHRINK_PRIOR);
+}
+
+const clampBase = (n: number): number => Math.min(MULTIPLE_MAX, Math.max(MULTIPLE_MIN, n));
+const clampScenario = (n: number): number => Math.min(SCENARIO_MAX, Math.max(SCENARIO_MIN, n));
+
+/**
+ * The calibration: what multiples each sector band gets, measured from a set of launched
+ * protocols. A launched protocol — one that already carries a market cap — states a
+ * market-cap-to-TVL ratio; exchanges are left out by the caller, because an exchange token
+ * is not a protocol launch and its ratio would teach the model the wrong lesson. A band's
+ * base multiple is its samples' median ratio, shrunk toward the snapshot-wide median with
+ * SHRINK_PRIOR phantom samples and clamped to [MULTIPLE_MIN, MULTIPLE_MAX]; its bear and
+ * bull multiples are the same shrinkage applied to the band's SCENARIO_LOW_PCT and
+ * SCENARIO_HIGH_PCT percentiles, clamped to the wider scenario band. A band with no sample
+ * keeps its stated radar-3 multiple for the base and the snapshot-wide scenario multiples
+ * for the range, and says so, so the model never silently invents a number.
+ */
+export function calibrateFrom(launched: SnapshotProtocol[]): Calibration {
   const allRatios = launched.map((p) => p.mcap_usd! / p.tvl_usd);
   const globalMedian = allRatios.length > 0 ? median(allRatios) : null;
+  const globalBear = allRatios.length > 0 ? clampScenario(shrunk(allRatios, allRatios, (v) => percentile(v, SCENARIO_LOW_PCT))) : STATED_MULTIPLES.E;
+  const globalBull = allRatios.length > 0 ? clampScenario(shrunk(allRatios, allRatios, (v) => percentile(v, SCENARIO_HIGH_PCT))) : STATED_MULTIPLES.E;
   const bands = (Object.keys(BAND_LABELS) as SectorBand[]).map((band) => {
     const ratios = launched.filter((p) => sectorBand(p.category) === band).map((p) => p.mcap_usd! / p.tvl_usd);
     if (ratios.length === 0 || globalMedian === null) {
@@ -392,19 +555,24 @@ export function calibrateMultiples(snapshot: Snapshot): Calibration {
         label: BAND_LABELS[band],
         samples: ratios.length,
         median_ratio: null,
+        low_ratio: null,
+        high_ratio: null,
         multiple: STATED_MULTIPLES[band],
+        bear_multiple: round3(globalBear),
+        bull_multiple: round3(globalBull),
         source: 'stated' as const,
       };
     }
-    const med = median(ratios);
-    const shrunk = (ratios.length * med + SHRINK_PRIOR * globalMedian) / (ratios.length + SHRINK_PRIOR);
-    const multiple = round3(Math.min(MULTIPLE_MAX, Math.max(MULTIPLE_MIN, shrunk)));
     return {
       band,
       label: BAND_LABELS[band],
       samples: ratios.length,
-      median_ratio: round3(med),
-      multiple,
+      median_ratio: round3(median(ratios)),
+      low_ratio: round3(percentile(ratios, SCENARIO_LOW_PCT)),
+      high_ratio: round3(percentile(ratios, SCENARIO_HIGH_PCT)),
+      multiple: round3(clampBase(shrunk(ratios, allRatios, median))),
+      bear_multiple: round3(clampScenario(shrunk(ratios, allRatios, (v) => percentile(v, SCENARIO_LOW_PCT)))),
+      bull_multiple: round3(clampScenario(shrunk(ratios, allRatios, (v) => percentile(v, SCENARIO_HIGH_PCT)))),
       source: 'calibrated' as const,
     };
   });
@@ -415,10 +583,105 @@ export function calibrateMultiples(snapshot: Snapshot): Calibration {
   };
 }
 
+/** The calibration the board runs on: every launched protocol in the snapshot. */
+export function calibrateMultiples(snapshot: Snapshot): Calibration {
+  return calibrateFrom(launchedProtocols(snapshot));
+}
+
+/** A band's three multiples under a calibration, as one record. */
+function multiplesOf(calibration: Calibration): Record<SectorBand, { base: number; bear: number; bull: number; samples: number }> {
+  return Object.fromEntries(
+    calibration.bands.map((b) => [b.band, { base: b.multiple, bear: b.bear_multiple, bull: b.bull_multiple, samples: b.samples }]),
+  ) as Record<SectorBand, { base: number; bear: number; bull: number; samples: number }>;
+}
+
 /** The chain-diversity multiplier: a protocol live on more chains is worth a little more. */
 export function chainMultiplier(chains: string[], model: ModelConstants): number {
   const extra = Math.max(0, chains.length - 1);
   return Math.round((1 + Math.min(extra * model.chain_step, model.chain_max_bonus)) * 1e4) / 1e4;
+}
+
+/** The growth multiplier the base case uses: the clamped seven-day change, weighted. */
+function growthMultiplier(growthPct: number, model: ModelConstants): number {
+  return 1 + (growthPct / 100) * model.growth_weight;
+}
+
+/** The growth multiplier the bear case uses: upside credit dropped, downside kept in full. */
+function bearGrowthMultiplier(growthPct: number, model: ModelConstants): number {
+  return 1 + (Math.min(growthPct, 0) / 100) * model.growth_weight;
+}
+
+/** The maturity multiplier: 0.6 for a brand-new protocol rising to 1.0 at three years. */
+function maturityMultiplier(age: number | null, model: ModelConstants): number {
+  const ageForModel = age ?? model.unknown_age_days;
+  return model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
+}
+
+/** Everything one protocol scores under a calibration: the three scenario values and every factor behind them. */
+export interface Scored {
+  implied: number;
+  bear: number;
+  bull: number;
+  multiple: number;
+  bearMultiple: number;
+  bullMultiple: number;
+  baseValue: number;
+  band: SectorBand;
+  samples: number;
+  growthPct: number;
+  growthMult: number;
+  maturityMult: number;
+  chainMult: number;
+  age: number | null;
+  sensitivity: Sensitivity;
+}
+
+/** Score one protocol as if it were pre-token, under `model` and the calibrated `calibration`. */
+export function scoreProtocol(
+  protocol: SnapshotProtocol,
+  asOf: string,
+  model: ModelConstants,
+  calibration: Calibration,
+): Scored {
+  const age = ageDays(asOf, protocol.listed_at);
+  const rawGrowth = finite(protocol.change_7d, 0);
+  const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
+  const growthMult = growthMultiplier(growthPct, model);
+  const maturityMult = maturityMultiplier(age, model);
+  const band = sectorBand(protocol.category);
+  const mults = multiplesOf(calibration)[band];
+  const chainMult = chainMultiplier(protocol.chains, model);
+  const rest = maturityMult * chainMult;
+  const implied = Math.max(1, Math.round(protocol.tvl_usd * mults.base * growthMult * rest));
+  const bear = Math.max(1, Math.round(protocol.tvl_usd * mults.bear * bearGrowthMultiplier(growthPct, model) * rest));
+  const bull = Math.max(1, Math.round(protocol.tvl_usd * mults.bull * growthMult * rest));
+  // Sensitivity: how far the sector multiple's own spread can carry this row, against how
+  // much of the row's value the growth assumption contributes. The larger one is the
+  // assumption the row leans on, and its size is printed with the row.
+  const multipleSpread = ((mults.bull - mults.bear) / mults.base) * 100;
+  const growthContribution = Math.abs(growthMult - 1) * 100;
+  const sensitivity: Sensitivity = {
+    driver: multipleSpread >= growthContribution ? 'sector multiple' : '7-day growth',
+    multiple_spread_pct: Math.round(multipleSpread),
+    growth_contribution_pct: Math.round(growthContribution),
+  };
+  return {
+    implied,
+    bear,
+    bull,
+    multiple: mults.base,
+    bearMultiple: mults.bear,
+    bullMultiple: mults.bull,
+    baseValue: Math.round(protocol.tvl_usd * mults.base),
+    band,
+    samples: mults.samples,
+    growthPct,
+    growthMult,
+    maturityMult,
+    chainMult,
+    age,
+    sensitivity,
+  };
 }
 
 /** The multipliers and the implied value one protocol gets under `model` and the calibrated `multiples`. */
@@ -428,19 +691,34 @@ export function impliedValue(
   model: ModelConstants,
   multiples: Record<SectorBand, number>,
 ): { implied: number; multiple: number; baseValue: number; band: SectorBand; growthPct: number; growthMult: number; maturityMult: number; chainMult: number; age: number | null } {
-  const age = ageDays(asOf, protocol.listed_at);
-  const rawGrowth = finite(protocol.change_7d, 0);
-  const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
-  const growthMult = 1 + (growthPct / 100) * model.growth_weight;
-  const ageForModel = age ?? model.unknown_age_days;
-  const maturityMult =
-    model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
-  const band = sectorBand(protocol.category);
-  const multiple = multiples[band];
-  const chainMult = chainMultiplier(protocol.chains, model);
-  const base = protocol.tvl_usd * multiple;
-  const implied = Math.max(1, Math.round(base * growthMult * maturityMult * chainMult));
-  return { implied, multiple, baseValue: Math.round(base), band, growthPct, growthMult, maturityMult, chainMult, age };
+  const calibration: Calibration = {
+    samples: 0,
+    global_median_ratio: null,
+    bands: (Object.keys(BAND_LABELS) as SectorBand[]).map((band) => ({
+      band,
+      label: BAND_LABELS[band],
+      samples: 0,
+      median_ratio: null,
+      low_ratio: null,
+      high_ratio: null,
+      multiple: multiples[band],
+      bear_multiple: multiples[band],
+      bull_multiple: multiples[band],
+      source: 'stated' as const,
+    })),
+  };
+  const s = scoreProtocol(protocol, asOf, model, calibration);
+  return {
+    implied: s.implied,
+    multiple: s.multiple,
+    baseValue: s.baseValue,
+    band: s.band,
+    growthPct: s.growthPct,
+    growthMult: s.growthMult,
+    maturityMult: s.maturityMult,
+    chainMult: s.chainMult,
+    age: s.age,
+  };
 }
 
 /** Sectors whose seven-day moves swing hardest, and whose tokens launch into the most volatility. */
@@ -491,6 +769,128 @@ export function riskOf(
   return { tier, score, reasons };
 }
 
+/**
+ * A row's confidence: how much evidence stands behind its number, scored 0 to 100 from five
+ * parts, each a stated rule over the row's own record and its band's calibration.
+ *
+ *   evidence   0..30 — the launched samples behind the band's multiples: a band calibrated
+ *              on 40 launches earns the full 30; the score scales with the count.
+ *   record     0..20 — the snapshot records the row's seven-day change (10) and its
+ *              listing date (10); a figure the model had to assume earns nothing.
+ *   scale      0..20 — the row's TVL: $1B or more earns 20, then 16 / 12 / 8 / 4 down the
+ *              size steps, because a small TVL is itself a noisy input.
+ *   stability  0..15 — the week's move: within 5% earns 15, then 10 / 5 / 0 as the swing
+ *              grows; an unreported week earns 5, neither trusted nor condemned.
+ *   track      0..15 — the record's length: three years earns 15, then 10 / 6 / 3; an
+ *              unknown listing date earns 0.
+ *
+ * HIGH is 70 and up, MEDIUM 45 to 69, LOW under 45. The score grades the row's inputs,
+ * never the protocol: a superb protocol with a thin record scores low, and says why.
+ */
+export function confidenceOf(protocol: SnapshotProtocol, age: number | null, bandSamples: number): Confidence {
+  const evidence = Math.round(30 * Math.min(1, bandSamples / 40));
+  const record = (protocol.change_7d !== null ? 10 : 0) + (protocol.listed_at !== null ? 10 : 0);
+  const tvl = protocol.tvl_usd;
+  const scale = tvl >= 1_000_000_000 ? 20 : tvl >= 250_000_000 ? 16 : tvl >= 100_000_000 ? 12 : tvl >= 25_000_000 ? 8 : 4;
+  const move = protocol.change_7d === null ? null : Math.abs(protocol.change_7d);
+  const stability = move === null ? 5 : move <= 5 ? 15 : move <= 15 ? 10 : move <= 35 ? 5 : 0;
+  const track = age === null ? 0 : age >= 1095 ? 15 : age >= 365 ? 10 : age >= 180 ? 6 : 3;
+  const parts: ConfidenceParts = { evidence, record, scale, stability, track };
+  const score = evidence + record + scale + stability + track;
+  const label: ConfidenceLabel = score >= 70 ? 'HIGH' : score >= 45 ? 'MEDIUM' : 'LOW';
+  return { score, label, parts };
+}
+
+/** A rank for Spearman's correlation: average ranks, ties sharing theirs. */
+function ranks(values: number[]): number[] {
+  const order = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+  const out = new Array<number>(values.length);
+  let i = 0;
+  while (i < order.length) {
+    let j = i;
+    while (j + 1 < order.length && order[j + 1]!.v === order[i]!.v) j++;
+    const avg = (i + j) / 2 + 1;
+    for (let k = i; k <= j; k++) out[order[k]!.i] = avg;
+    i = j + 1;
+  }
+  return out;
+}
+
+/** Spearman's rank correlation between two equal-length series; null when either never varies. */
+export function spearman(xs: number[], ys: number[]): number | null {
+  if (xs.length !== ys.length || xs.length < 3) return null;
+  const rx = ranks(xs);
+  const ry = ranks(ys);
+  const n = xs.length;
+  const mx = rx.reduce((a, b) => a + b, 0) / n;
+  const my = ry.reduce((a, b) => a + b, 0) / n;
+  let cov = 0;
+  let vx = 0;
+  let vy = 0;
+  for (let i = 0; i < n; i++) {
+    cov += (rx[i]! - mx) * (ry[i]! - my);
+    vx += (rx[i]! - mx) ** 2;
+    vy += (ry[i]! - my) ** 2;
+  }
+  if (vx === 0 || vy === 0) return null;
+  return Math.round((cov / Math.sqrt(vx * vy)) * 1000) / 1000;
+}
+
+/** Which half of the launched set a slug belongs to: FNV-1a over the slug, low bit. Deterministic. */
+function halfOf(slug: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < slug.length; i++) {
+    h ^= slug.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) % 2;
+}
+
+/**
+ * The cross-check: what this model is worth, measured on the snapshot's own launched
+ * protocols. The launched set is split in two by slug hash; each half is calibrated on the
+ * other, so every launched protocol is scored by a calibration that never saw it — as if it
+ * were still pre-token, from its TVL, week, age, sector and chains — and its three scenario
+ * values are set against the market cap it actually carries. The pooled figures say how the
+ * model ranks (against raw TVL's own ranking of the same protocols), how its base case runs
+ * (the median actual-over-base ratio), and how often a launch lands inside its range.
+ */
+export function validateModel(snapshot: Snapshot, model: ModelConstants = MODEL): Validation {
+  const launched = launchedProtocols(snapshot);
+  interface Pred { band: SectorBand; tvl: number; actual: number; base: number; bear: number; bull: number }
+  const preds: Pred[] = [];
+  for (const half of [0, 1]) {
+    const train = launched.filter((p) => halfOf(p.slug) === half);
+    const test = launched.filter((p) => halfOf(p.slug) !== half);
+    if (train.length === 0) continue;
+    const calibration = calibrateFrom(train);
+    for (const p of test) {
+      const s = scoreProtocol(p, snapshot.as_of, model, calibration);
+      preds.push({ band: s.band, tvl: p.tvl_usd, actual: p.mcap_usd!, base: s.implied, bear: s.bear, bull: s.bull });
+    }
+  }
+  const covered = preds.filter((x) => x.actual >= x.bear && x.actual <= x.bull);
+  const bands = (Object.keys(BAND_LABELS) as SectorBand[]).map((band) => {
+    const inBand = preds.filter((x) => x.band === band);
+    const inCovered = inBand.filter((x) => x.actual >= x.bear && x.actual <= x.bull);
+    return {
+      band,
+      n: inBand.length,
+      median_actual_over_base: inBand.length > 0 ? round3(median(inBand.map((x) => x.actual / x.base))) : null,
+      coverage_pct: inBand.length > 0 ? Math.round((inCovered.length / inBand.length) * 1000) / 10 : null,
+    };
+  });
+  return {
+    checked: preds.length,
+    spearman_model: spearman(preds.map((x) => x.base), preds.map((x) => x.actual)),
+    spearman_tvl: spearman(preds.map((x) => x.tvl), preds.map((x) => x.actual)),
+    median_actual_over_base: preds.length > 0 ? round3(median(preds.map((x) => x.actual / x.base))) : null,
+    coverage_n: covered.length,
+    coverage_pct: preds.length > 0 ? Math.round((covered.length / preds.length) * 1000) / 10 : null,
+    bands,
+  };
+}
+
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
 
@@ -538,13 +938,12 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
   // The multiples are calibrated once, from this snapshot's launched protocols, and the
   // same calibration scores every row.
   const calibration = calibrateMultiples(snapshot);
-  const multiples = Object.fromEntries(calibration.bands.map((b) => [b.band, b.multiple])) as Record<SectorBand, number>;
-  const bandSamples = Object.fromEntries(calibration.bands.map((b) => [b.band, b.samples])) as Record<SectorBand, number>;
 
   const scored = [...chosen.values()].map((p) => {
-    const v = impliedValue(p, snapshot.as_of, model, multiples);
+    const v = scoreProtocol(p, snapshot.as_of, model, calibration);
     const risk = riskOf(p, v.age);
-    return { p, v, risk };
+    const confidence = confidenceOf(p, v.age, v.samples);
+    return { p, v, risk, confidence };
   });
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
   return scored.map((s, i) => ({
@@ -562,26 +961,76 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     token_status: 'pre-token',
     age_days: s.v.age,
     implied_value_usd: s.v.implied,
+    bear_value_usd: s.v.bear,
+    bull_value_usd: s.v.bull,
     risk_adjusted_value_usd: riskAdjustedValue(s.v.implied, s.risk.score),
     risk_tier: s.risk.tier,
     risk_score: s.risk.score,
     risk_reasons: s.risk.reasons,
+    confidence_score: s.confidence.score,
+    confidence_label: s.confidence.label,
+    confidence_parts: s.confidence.parts,
     model: {
       base_multiple: s.v.multiple,
+      bear_multiple: s.v.bearMultiple,
+      bull_multiple: s.v.bullMultiple,
       base_value_usd: s.v.baseValue,
       sector_band: s.v.band,
-      calibration_samples: bandSamples[s.v.band],
+      calibration_samples: s.v.samples,
       growth_pct: s.v.growthPct,
       growth_multiplier: round4(s.v.growthMult),
       maturity_multiplier: round4(s.v.maturityMult),
       chain_multiplier: s.v.chainMult,
       age_days: s.v.age,
+      sensitivity_driver: s.v.sensitivity.driver,
+      sensitivity_pct: s.v.sensitivity.driver === 'sector multiple' ? s.v.sensitivity.multiple_spread_pct : s.v.sensitivity.growth_contribution_pct,
+      multiple_spread_pct: s.v.sensitivity.multiple_spread_pct,
+      growth_contribution_pct: s.v.sensitivity.growth_contribution_pct,
     },
     farm_steps: farmSteps(s.p, s.v.age).map(stepText),
   }));
 }
 
-const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+/** How many rows the shortlist holds. */
+export const PICKS_COUNT = 8;
+
+/** The confidence a row needs to be shortlisted: the evidence behind it must at least be middling. */
+export const PICKS_MIN_CONFIDENCE = 50;
+
+/** How many rows the avoid list holds at most. */
+export const AVOID_COUNT = 5;
+
+/** A seven-day fall steep enough to put a high-implied row on the avoid list on its own. */
+export const AVOID_FALL_PCT = -30;
+
+/**
+ * The curation, by rules stated here and printed on the dashboard. The shortlist takes the
+ * rows whose risk is not HIGH and whose confidence scores at least PICKS_MIN_CONFIDENCE,
+ * ordered by risk-adjusted value, and keeps the first PICKS_COUNT — the rows a farmer with
+ * limited capital would start from. The avoid list takes the board's highest-implied rows
+ * that fail one of three tests — HIGH risk, confidence under 45, or a seven-day TVL fall of
+ * AVOID_FALL_PCT or steeper — because those are the rows whose headline value is likeliest
+ * to mislead. The basket prices the shortlist as one equal-weight portfolio: the plain sum
+ * of its rows under each scenario, so the picks carry a combined range, not eight separate
+ * promises added up in the reader's head.
+ */
+export function curate(board: BoardRow[]): Curation {
+  const eligible = board
+    .filter((r) => r.risk_tier !== 'HIGH' && r.confidence_score >= PICKS_MIN_CONFIDENCE)
+    .sort((a, b) => b.risk_adjusted_value_usd - a.risk_adjusted_value_usd || a.rank - b.rank);
+  const picks = eligible.slice(0, PICKS_COUNT);
+  const avoid = board
+    .filter((r) => r.risk_tier === 'HIGH' || r.confidence_label === 'LOW' || (r.change_7d !== null && r.change_7d <= AVOID_FALL_PCT))
+    .slice(0, AVOID_COUNT);
+  return {
+    picks: picks.map((r) => r.slug),
+    avoid: avoid.map((r) => r.slug),
+    basket_rows: picks.length,
+    basket_bear_usd: picks.reduce((sum, r) => sum + r.bear_value_usd, 0),
+    basket_base_usd: picks.reduce((sum, r) => sum + r.implied_value_usd, 0),
+    basket_bull_usd: picks.reduce((sum, r) => sum + r.bull_value_usd, 0),
+  };
+}
 
 /** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
 export function stepText(step: FarmStep): string {
@@ -747,16 +1196,26 @@ export function radarRow(row: BoardRow): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
+    bear_value_usd: row.bear_value_usd,
+    bull_value_usd: row.bull_value_usd,
     risk_adjusted_value_usd: row.risk_adjusted_value_usd,
     risk_tier: row.risk_tier,
     risk_reasons: row.risk_reasons,
+    confidence_score: row.confidence_score,
+    confidence_label: row.confidence_label,
+    confidence_parts: row.confidence_parts,
     growth_multiplier: row.model.growth_multiplier,
     maturity_multiplier: row.model.maturity_multiplier,
     chain_multiplier: row.model.chain_multiplier,
     category_multiple: row.model.base_multiple,
+    bear_multiple: row.model.bear_multiple,
+    bull_multiple: row.model.bull_multiple,
     base_value_usd: row.model.base_value_usd,
     sector_band: row.model.sector_band,
     calibration_samples: row.model.calibration_samples,
+    sensitivity_driver: row.model.sensitivity_driver,
+    multiple_spread_pct: row.model.multiple_spread_pct,
+    growth_contribution_pct: row.model.growth_contribution_pct,
   };
 }
 
@@ -808,6 +1267,8 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const live = liveRows(snapshot);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
   const excluded = excludedRows(snapshot, new Set(board.map((r) => r.slug)));
+  const calibration = calibrateMultiples(snapshot);
+  const rows = board.map(radarRow);
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,
@@ -820,10 +1281,12 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     early_size: early,
     live_size: live.length,
     snapshot_sha256: snapshot.sha256,
-    calibration: calibrateMultiples(snapshot),
+    calibration,
     reconciliation: reconcile(snapshot, board, excluded),
+    validation: validateModel(snapshot, model),
+    curation: curate(board),
     excluded,
-    rows: board.map(radarRow),
+    rows,
     live,
   };
   return { board, radar };
@@ -875,7 +1338,7 @@ export function parseSnapshot(text: string): Snapshot {
   };
 }
 
-/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied value, and farm steps. */
+/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied value, scenarios, confidence, and farm steps. */
 export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null {
   const slugs = new Set(board.map((r) => r.slug));
   const missing = snapshot.watchlist.filter((s) => !slugs.has(s));
@@ -891,6 +1354,10 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
     if (steps.length < 3 || steps.length > 12) return `${r.slug} has ${steps.length} farm steps`;
     for (const s of steps) if (s.length < 20 || s.length > 600) return `${r.slug} has a farm step of ${s.length} characters`;
     if (!Number.isSafeInteger(r.implied_value_usd) || r.implied_value_usd <= 0 || r.implied_value_usd > 1e14) return `${r.slug} has implied value ${r.implied_value_usd}`;
+    if (!(r.bear_value_usd >= 1 && r.bear_value_usd <= r.implied_value_usd && r.implied_value_usd <= r.bull_value_usd && r.bull_value_usd <= 1e14)) {
+      return `${r.slug} has a scenario range out of order: bear ${r.bear_value_usd}, base ${r.implied_value_usd}, bull ${r.bull_value_usd}`;
+    }
+    if (!Number.isInteger(r.confidence_score) || r.confidence_score < 0 || r.confidence_score > 100) return `${r.slug} has confidence ${r.confidence_score}`;
     if (r.risk_tier !== 'LOW' && r.risk_tier !== 'MEDIUM' && r.risk_tier !== 'HIGH') return `${r.slug} has no risk tier`;
   }
   return null;
